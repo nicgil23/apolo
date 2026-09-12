@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apolo"
+version = "0.1.0"
+description = "CLI tool to download, tag with rich metadata, fetch synced lyrics, and organize music into your library."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "hypr" }
+]
+dependencies = [
+    "yt-dlp",
+    "mutagen",
+    "requests",
+    "rich",
+    "typer>=0.9.0",
+    "pydantic>=2.0.0",
+    "rapidfuzz>=3.0.0",
+    "pillow>=10.0.0",
+    "musicbrainzngs>=0.7.1"
+]
+
+[project.scripts]
+apolo = "apolo.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apolo*"]
