@@ -39,6 +39,36 @@ AUDIO_EXTENSIONS = {
     ".m4v",
 }
 
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".bmp",
+    ".gif",
+}
+
+JUNK_EXTENSIONS = {
+    ".nfo",
+    ".sfv",
+    ".m3u",
+    ".m3u8",
+    ".pls",
+    ".txt",
+    ".cue",
+    ".url",
+    ".log",
+    ".accurip",
+    ".md5",
+    ".db",
+}
+
+JUNK_NAMES = {
+    ".ds_store",
+    "thumbs.db",
+    "desktop.ini",
+}
+
 
 def is_well_tagged(info: dict) -> bool:
     """
@@ -247,6 +277,148 @@ class ProcessingPipeline:
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         return output_file
 
+    def find_sidecar_lrc(self, file_path: Path) -> Optional[Path]:
+        """Finds companion .lrc file next to audio file."""
+        if not file_path.parent.exists():
+            return None
+        lrc_candidate = file_path.with_suffix(".lrc")
+        if lrc_candidate.exists() and lrc_candidate.is_file():
+            return lrc_candidate
+        try:
+            for item in file_path.parent.iterdir():
+                if item.is_file() and item.suffix.lower() == ".lrc" and item.stem.lower() == file_path.stem.lower():
+                    return item
+        except Exception:
+            pass
+        return None
+
+    def find_companion_cover(self, file_path: Path) -> Optional[Path]:
+        """Finds track-specific or album cover image in the same directory."""
+        parent = file_path.parent
+        if not parent.exists() or not parent.is_dir():
+            return None
+
+        # 1. Exact track stem match: e.g. track.jpg, track.png
+        for ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]:
+            sidecar = file_path.with_suffix(ext)
+            if sidecar.exists() and sidecar.is_file():
+                return sidecar
+        try:
+            for item in parent.iterdir():
+                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS and item.stem.lower() == file_path.stem.lower():
+                    return item
+        except Exception:
+            pass
+
+        # 2. Well-known cover image names in directory
+        known_names = ["cover", "folder", "front", "album", "artwork", "art"]
+        for name in known_names:
+            for ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]:
+                candidate = parent / f"{name}{ext}"
+                if candidate.exists() and candidate.is_file():
+                    return candidate
+        try:
+            for item in parent.iterdir():
+                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+                    if item.stem.lower() in known_names:
+                        return item
+        except Exception:
+            pass
+
+        # 3. If there is only one image in the directory, use it
+        try:
+            images = [item for item in parent.iterdir() if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS]
+            if len(images) == 1:
+                return images[0]
+        except Exception:
+            pass
+
+        return None
+
+    def _cleanup_source_file_artifacts(self, file_path: Path) -> None:
+        """Deletes track-specific sidecar files (.lrc, .jpg/.png) associated with file_path."""
+        sidecar_lrc = self.find_sidecar_lrc(file_path)
+        if sidecar_lrc and sidecar_lrc.exists():
+            try:
+                sidecar_lrc.unlink()
+            except Exception:
+                pass
+
+        for ext in IMAGE_EXTENSIONS:
+            img_sidecar = file_path.with_suffix(ext)
+            if img_sidecar.exists() and img_sidecar.is_file():
+                try:
+                    img_sidecar.unlink()
+                except Exception:
+                    pass
+        if file_path.parent.exists():
+            try:
+                for item in file_path.parent.iterdir():
+                    if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS and item.stem.lower() == file_path.stem.lower():
+                        item.unlink()
+            except Exception:
+                pass
+
+    def cleanup_processed_directory(self, dir_path: Path, root_boundary: Optional[Path] = None) -> None:
+        """
+        Cleans up leftover images, lyrics, and junk files in dir_path if no audio files remain,
+        and removes empty directories up to root_boundary.
+        """
+        if not dir_path.exists() or not dir_path.is_dir():
+            return
+
+        # Check if any audio files still exist in this directory or subdirectories
+        remaining_audio = [p for p in dir_path.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+        if remaining_audio:
+            return
+
+        # Delete remaining image files, .lrc files, and junk files in dir_path
+        try:
+            for item in list(dir_path.rglob("*")):
+                if item.is_file():
+                    ext = item.suffix.lower()
+                    name = item.name.lower()
+                    if ext in IMAGE_EXTENSIONS or ext == ".lrc" or ext in JUNK_EXTENSIONS or name in JUNK_NAMES:
+                        try:
+                            item.unlink()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # Remove empty subdirectories bottom-up
+        try:
+            subdirs = sorted([d for d in dir_path.rglob("*") if d.is_dir()], key=lambda p: len(p.parts), reverse=True)
+            for sub in subdirs:
+                if sub.exists() and not any(sub.iterdir()):
+                    try:
+                        sub.rmdir()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Remove dir_path itself if not root_boundary and not library_dir/inbox_dir
+        special_dirs = set()
+        if self.config.directories.library_dir.exists():
+            special_dirs.add(self.config.directories.library_dir.resolve())
+        if self.config.directories.inbox_dir.exists():
+            special_dirs.add(self.config.directories.inbox_dir.resolve())
+        if root_boundary and root_boundary.exists():
+            special_dirs.add(root_boundary.resolve())
+
+        curr = dir_path
+        while curr.exists() and curr.resolve() not in special_dirs:
+            try:
+                if not any(curr.iterdir()):
+                    parent = curr.parent
+                    curr.rmdir()
+                    curr = parent
+                else:
+                    break
+            except Exception:
+                break
+
     def extract_file_info(self, file_path: Path) -> dict:
         """Extract existing title, artist, album, date, disc, track, origin, cover from file metadata or filename."""
         raw_title = None
@@ -265,8 +437,28 @@ class ProcessingPipeline:
         duration = None
         has_native_tags = False
 
-        # Extract embedded cover art
+        # Extract embedded cover art or companion cover image
         cover_art_data = AudioTagger.extract_cover_art_from_file(file_path)
+        if not cover_art_data and self.config.organization.embed_cover_art:
+            companion_cover = self.find_companion_cover(file_path)
+            if companion_cover:
+                try:
+                    raw_img = companion_cover.read_bytes()
+                    max_size = getattr(self.config.organization, "max_cover_size", 1400)
+                    from apolo.cover import CoverManager
+                    cover_art_data = CoverManager.optimize_image_bytes(raw_img, max_dim=max_size)
+                except Exception:
+                    pass
+
+        # Check sidecar .lrc file first
+        sidecar_lrc = self.find_sidecar_lrc(file_path)
+        if sidecar_lrc:
+            try:
+                lrc_text = sidecar_lrc.read_text(encoding="utf-8", errors="ignore").strip().lstrip("\ufeff")
+                if lrc_text:
+                    raw_lyrics = lrc_text
+            except Exception:
+                pass
 
         try:
             audio = mutagen.File(file_path)
@@ -489,6 +681,8 @@ class ProcessingPipeline:
                     match.genre = info["genre"]
                 if not match.cover_art_data and info["cover_art_data"]:
                     match.cover_art_data = info["cover_art_data"]
+                if not match.synced_lyrics and info["lyrics"]:
+                    match.synced_lyrics = info["lyrics"]
 
         # Assign origin: CLI param > existing tag in file > config default
         final_origin = origin or info.get("origin") or self.config.downloader.default_origin
@@ -525,6 +719,8 @@ class ProcessingPipeline:
             if on_progress:
                 on_progress("organizing", f"Placing in library: {match.artist} - {match.title} (FLAC)...")
             dest_audio, dest_lrc = self.organizer.organize_track(file_path, match, extension=".flac")
+            self._cleanup_source_file_artifacts(file_path)
+            self.cleanup_processed_directory(file_path.parent, root_boundary=self.config.directories.inbox_dir)
             return dest_audio, dest_lrc, match
 
         # Convert to high-quality .opus if not already .opus
@@ -547,6 +743,9 @@ class ProcessingPipeline:
             except Exception:
                 pass
 
+        self._cleanup_source_file_artifacts(file_path)
+        self.cleanup_processed_directory(file_path.parent, root_boundary=self.config.directories.inbox_dir)
+
         return dest_audio, dest_lrc, match
 
     def process_directory(
@@ -565,6 +764,7 @@ class ProcessingPipeline:
             return results
 
         files = [p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+        source_dirs = {p.parent for p in files}
 
         for file_path in sorted(files):
             res = self.process_file(
@@ -578,18 +778,10 @@ class ProcessingPipeline:
             )
             if res:
                 results.append(res)
-                if not dry_run:
-                    # Clean up empty parent directories up to directory parent
-                    parent = file_path.parent
-                    while parent != directory.parent and parent.exists():
-                        try:
-                            if not any(parent.iterdir()):
-                                parent.rmdir()
-                                parent = parent.parent
-                            else:
-                                break
-                        except Exception:
-                            break
+
+        if not dry_run:
+            for d in sorted(source_dirs, key=lambda p: len(p.parts), reverse=True):
+                self.cleanup_processed_directory(d, root_boundary=directory)
 
         return results
 
