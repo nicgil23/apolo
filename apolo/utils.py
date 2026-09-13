@@ -4,13 +4,19 @@ from typing import Optional, Tuple
 
 
 def normalize_search_string(text: str) -> str:
-    """Normalize text by removing emojis, fullwidth chars, and punctuation noise."""
+    """Normalize text by removing emojis and punctuation noise while preserving all international characters and combining marks."""
     if not text:
         return ""
-    # NFKD normalization to convert fullwidth characters (e.g. ： to :, ＂ to ")
-    normalized = unicodedata.normalize("NFKD", text)
-    # Remove emojis and non-alphanumeric except basic spacing
-    cleaned = re.sub(r"[^\w\s-]", " ", normalized)
+    # NFKC normalization converts fullwidth characters and precomposes combining marks
+    normalized = unicodedata.normalize("NFKC", text)
+    result = []
+    for ch in normalized:
+        cat = unicodedata.category(ch)
+        if cat.startswith(("L", "N", "M")) or ch in " -\t\n\r":
+            result.append(ch)
+        else:
+            result.append(" ")
+    cleaned = "".join(result)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
 
@@ -109,7 +115,16 @@ def is_compilation_album(album_title: Optional[str], album_artist: Optional[str]
 
     if album_title:
         norm_title = album_title.strip().lower()
-        if any(keyword in norm_title for keyword in ["original soundtrack", "motion picture soundtrack", "ost", "soundtrack", "various artists"]):
+        # Use word-boundary regex to prevent false positives (e.g., 'ost' in 'nostalgia' or 'ghost')
+        compilation_patterns = [
+            r"\boriginal soundtrack\b",
+            r"\bmotion picture soundtrack\b",
+            r"\bsoundtrack\b",
+            r"\bost\b",
+            r"\bvarious artists\b",
+            r"\bv\.a\.\b",
+        ]
+        if any(re.search(pat, norm_title) for pat in compilation_patterns):
             return True
 
     return False

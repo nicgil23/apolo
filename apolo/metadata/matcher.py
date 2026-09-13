@@ -39,14 +39,15 @@ class MetadataMatcher:
 
         return results
 
-    def find_best_match(
+    def get_ranked_candidates(
         self,
         query: str,
         expected_title: Optional[str] = None,
         expected_artist: Optional[str] = None,
         expected_album: Optional[str] = None,
         expected_duration: Optional[float] = None,
-    ) -> Optional[TrackMetadata]:
+        min_score: float = 40.0,
+    ) -> List[tuple[float, TrackMetadata]]:
         clean_title = normalize_search_string(expected_title or query)
         raw_artist = expected_artist or ""
         primary_artist = extract_primary_artist(raw_artist) or raw_artist
@@ -55,16 +56,19 @@ class MetadataMatcher:
         clean_album = normalize_search_string(expected_album or "")
 
         queries: List[str] = []
-        # 1. Primary artist + Title (Highest priority for multi-artist collaborations)
-        if clean_primary and clean_title:
-            queries.append(f"{clean_primary} {clean_title}")
-        # 2. Primary artist + Album + Title
+        # 1. Primary artist + Album + Title (Highest priority when album context is known)
         if clean_primary and clean_album and clean_title and clean_album.lower() not in ["single", "unknown"]:
             queries.append(f"{clean_primary} {clean_album} {clean_title}")
-        # 3. Full artist string + Title
+        # 2. Primary artist + Title (Multi-artist collaborations)
+        if clean_primary and clean_title:
+            queries.append(f"{clean_primary} {clean_title}")
+        # 3. Primary artist + Album
+        if clean_primary and clean_album and clean_album.lower() not in ["single", "unknown"]:
+            queries.append(f"{clean_primary} {clean_album}")
+        # 4. Full artist string + Title
         if clean_artist and clean_title and clean_artist != clean_primary:
             queries.append(f"{clean_artist} {clean_title}")
-        # 4. Standalone Title
+        # 5. Standalone Title
         if clean_title and clean_title not in queries:
             queries.append(clean_title)
 
@@ -74,26 +78,44 @@ class MetadataMatcher:
                 continue
             found = self.search_all(q)
             candidates.extend(found)
-            if len(candidates) >= 15:
+            if len(candidates) >= 20:
                 break
 
         if not candidates:
-            return None
+            return []
 
         # Score candidates strictly
         scored_candidates: List[tuple[float, TrackMetadata]] = []
         for cand in candidates:
             score = self._compute_similarity_score(
-                cand, clean_title, clean_artist, clean_primary, expected_duration
+                cand, clean_title, clean_artist, clean_primary, clean_album, expected_duration
             )
-            if score >= 60.0:
+            if score >= min_score:
                 scored_candidates.append((score, cand))
 
-        if not scored_candidates:
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        return scored_candidates
+
+    def find_best_match(
+        self,
+        query: str,
+        expected_title: Optional[str] = None,
+        expected_artist: Optional[str] = None,
+        expected_album: Optional[str] = None,
+        expected_duration: Optional[float] = None,
+    ) -> Optional[TrackMetadata]:
+        ranked = self.get_ranked_candidates(
+            query=query,
+            expected_title=expected_title,
+            expected_artist=expected_artist,
+            expected_album=expected_album,
+            expected_duration=expected_duration,
+            min_score=70.0,
+        )
+        if not ranked:
             return None
 
-        scored_candidates.sort(key=lambda x: x[0], reverse=True)
-        best_meta = scored_candidates[0][1]
+        best_meta = ranked[0][1]
 
         # Download cover art if available
         if self.config.organization.embed_cover_art and best_meta.cover_art_url:
@@ -107,10 +129,12 @@ class MetadataMatcher:
         clean_title: str,
         clean_artist: str,
         primary_artist: str,
+        clean_album: str,
         expected_duration: Optional[float],
     ) -> float:
         cand_title = normalize_search_string(meta.title)
         cand_artist = normalize_search_string(meta.artist)
+        cand_album = normalize_search_string(meta.album or "")
 
         # 1. Title Similarity Check (MANDATORY)
         if clean_title:
@@ -137,20 +161,47 @@ class MetadataMatcher:
             best_artist_score = max(artist_scores) if artist_scores else 0.0
 
             # If we know the artist and candidate has no correlation, reject
-            if best_artist_score < 40:
+            if best_artist_score < 50:
+                return 0.0
+
+            # For short titles, require high title ratio unless artist is exact match
+            if len(clean_title) <= 6 and best_artist_score < 80 and title_ratio < 75:
                 return 0.0
         else:
             best_artist_score = 70.0
 
         score = (best_title_score * 0.55) + (best_artist_score * 0.45)
 
-        # 3. Duration Bonus/Penalty
+        # 3. Album Similarity Check & Bonus/Penalty
+        if clean_album and clean_album.lower() not in ["single", "unknown"]:
+            if cand_album:
+                alb_ratio = fuzz.ratio(clean_album.lower(), cand_album.lower())
+                alb_token = fuzz.token_set_ratio(clean_album.lower(), cand_album.lower())
+                best_alb_score = max(alb_ratio, alb_token)
+                if best_alb_score >= 75:
+                    score += 25.0
+                elif best_alb_score < 40:
+                    score -= 20.0
+            else:
+                score -= 10.0
+
+        # 4. Duration Bonus/Penalty
         if expected_duration and meta.duration:
             delta = abs(expected_duration - meta.duration)
             if delta <= 4:
                 score += 5.0
             elif delta > 25:
                 score -= min(25.0, (delta - 25) * 0.5)
+
+        # 5. Metadata Completeness Bonus (disc total, track total, date)
+        if meta.track_number is not None:
+            score += 1.0
+        if meta.track_total is not None:
+            score += 1.0
+        if meta.disc_total is not None and meta.disc_total > 1:
+            score += 2.0
+        if meta.date:
+            score += 0.5
 
         return max(0.0, score)
 

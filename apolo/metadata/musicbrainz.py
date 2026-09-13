@@ -62,7 +62,7 @@ class MusicBrainzProvider:
                     date=date,
                     genre=genre,
                     disc_number=1 if track_num else None,
-                    disc_total=1 if track_num else None,
+                    disc_total=len(medium_list) if medium_list and len(medium_list) > 1 else None,
                     compilation=False,
                     cover_art_url=cover_url,
                     duration=duration,

@@ -171,3 +171,75 @@ def test_reorganize_paths_recursive(tmp_path):
     assert not wrong_file.exists()
     assert not wrong_lrc.exists()
 
+
+def test_multi_disc_disc1_with_existing_disc2_folder(tmp_path):
+    library_dir = tmp_path / "Music"
+    config = ApoloConfig(
+        directories=DirectoriesConfig(library_dir=library_dir),
+        organization=OrganizationConfig(multi_disc_folder=True),
+    )
+    organizer = LibraryOrganizer(config)
+
+    # Pre-create Disc 02 directory in the album folder
+    album_dir = library_dir / "Tanger" / "Prefer not to say (2024)" / "Disc 02"
+    album_dir.mkdir(parents=True)
+
+    meta_disc1 = TrackMetadata(
+        title="wise mystical magical wizard fish",
+        artist="Tanger",
+        album_artist="Tanger",
+        album="Prefer not to say",
+        track_number=1,
+        disc_number=1,
+        disc_total=None,
+        date="2024",
+    )
+
+    dest1 = organizer.get_destination_path(meta_disc1)
+    assert "Disc 01" in str(dest1)
+    assert dest1.name == "01 - wise mystical magical wizard fish.opus"
+
+
+def test_unicode_search_normalization():
+    from apolo.utils import normalize_search_string
+    text = "முன்னுதாரணம் (feat. Treb & tiyu)"
+    cleaned = normalize_search_string(text)
+    assert "முன்னுதாரணம்" in cleaned
+    assert "Treb" in cleaned
+
+
+def test_matcher_prefers_album_over_single():
+    from apolo.metadata.matcher import MetadataMatcher
+    matcher = MetadataMatcher()
+    clean_title = "tiny windows"
+    clean_artist = "Tanger"
+    clean_primary = "Tanger"
+    clean_album = "prefer not to say"
+
+    cand_album = TrackMetadata(
+        title="tiny windows",
+        artist="Tanger",
+        album="Prefer not to say",
+        track_number=2,
+        disc_number=2,
+        disc_total=3,
+    )
+    cand_single = TrackMetadata(
+        title="tiny windows",
+        artist="Tanger",
+        album="tiny windows",
+        track_number=1,
+        disc_number=1,
+        disc_total=1,
+    )
+
+    score_album = matcher._compute_similarity_score(
+        cand_album, clean_title, clean_artist, clean_primary, clean_album, expected_duration=None
+    )
+    score_single = matcher._compute_similarity_score(
+        cand_single, clean_title, clean_artist, clean_primary, clean_album, expected_duration=None
+    )
+
+    assert score_album > score_single + 30.0
+
+

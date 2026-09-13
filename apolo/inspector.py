@@ -64,11 +64,30 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     info = getattr(audio, "info", None)
 
     # Audio stream properties
-    duration_str = format_duration(getattr(info, "length", None))
+    duration_sec = getattr(info, "length", None)
+    duration_str = format_duration(duration_sec)
     channels = getattr(info, "channels", "-")
-    sample_rate = f"{getattr(info, 'sample_rate', '-')} Hz"
-    bitrate = f"{int(getattr(info, 'bitrate', 0) / 1000)} kbps" if getattr(info, "bitrate", 0) else "-"
-    file_size = f"{file_path.stat().st_size / (1024 * 1024):.2f} MB"
+    sample_rate_val = getattr(info, "sample_rate", None)
+    bits_per_sample = getattr(info, "bits_per_sample", None)
+    if sample_rate_val and bits_per_sample:
+        sample_rate = f"{sample_rate_val} Hz ({bits_per_sample}-bit)"
+    elif sample_rate_val:
+        sample_rate = f"{sample_rate_val} Hz"
+    else:
+        sample_rate = "-"
+
+    file_bytes = file_path.stat().st_size
+    file_size = f"{file_bytes / (1024 * 1024):.2f} MB"
+
+    raw_bitrate = getattr(info, "bitrate", 0)
+    if raw_bitrate and raw_bitrate > 0:
+        bitrate = f"{int(raw_bitrate / 1000)} kbps"
+    elif duration_sec and duration_sec > 0 and file_bytes > 0:
+        # Dynamically compute average bitrate from file size and duration
+        calc_kbps = round((file_bytes * 8) / (duration_sec * 1000))
+        bitrate = f"~{calc_kbps} kbps (calculated)"
+    else:
+        bitrate = "-"
 
     # Metadata fields
     title = get_first_tag(tags, ["TITLE", "title", "TIT2"]) or "-"

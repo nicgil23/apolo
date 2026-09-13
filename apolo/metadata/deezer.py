@@ -78,7 +78,7 @@ class DeezerProvider:
                     date=release_date,
                     genre=genre,
                     disc_number=disk_number,
-                    disc_total=1 if disk_number else None,
+                    disc_total=None,
                     compilation=False,
                     cover_art_url=cover_url,
                     duration=duration,

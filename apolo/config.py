@@ -31,6 +31,7 @@ class DownloaderConfig:
     audio_bitrate: str = "256k"
     default_origin: str = "local"
     preserve_existing_tags: bool = True
+    preserve_lossless: bool = False
     concurrent_downloads: int = 3
 
 
@@ -94,6 +95,7 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
         audio_bitrate=str(dl_data.get("audio_bitrate", "256k")),
         default_origin=str(dl_data.get("default_origin", "local")),
         preserve_existing_tags=bool(dl_data.get("preserve_existing_tags", True)),
+        preserve_lossless=bool(dl_data.get("preserve_lossless", False)),
         concurrent_downloads=int(dl_data.get("concurrent_downloads", 3)),
     )
 

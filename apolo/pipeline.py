@@ -90,6 +90,8 @@ class ProcessingPipeline:
         self,
         url: str,
         origin: Optional[str] = None,
+        dry_run: bool = False,
+        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
         """
@@ -109,13 +111,28 @@ class ProcessingPipeline:
             if on_progress:
                 on_progress("matching", f"Searching metadata for '{search_query}'...")
 
-            match = self.matcher.find_best_match(
-                query=search_query,
-                expected_title=item.title,
-                expected_artist=item.artist,
-                expected_album=item.album,
-                expected_duration=item.duration,
-            )
+            match = None
+            if candidate_selector is not None:
+                ranked = self.matcher.get_ranked_candidates(
+                    query=search_query,
+                    expected_title=item.title,
+                    expected_artist=item.artist,
+                    expected_album=item.album,
+                    expected_duration=item.duration,
+                )
+                if ranked:
+                    match = candidate_selector(ranked, search_query)
+                    if match and self.config.organization.embed_cover_art and match.cover_art_url and not match.cover_art_data:
+                        match.cover_art_data = self.matcher._download_cover(match.cover_art_url)
+
+            if not match and candidate_selector is None:
+                match = self.matcher.find_best_match(
+                    query=search_query,
+                    expected_title=item.title,
+                    expected_artist=item.artist,
+                    expected_album=item.album,
+                    expected_duration=item.duration,
+                )
 
             if match:
                 # Inherit playlist/source track info if missing from provider match
@@ -166,6 +183,18 @@ class ProcessingPipeline:
                 duration=match.duration or item.duration,
             )
             match.synced_lyrics = synced_lyrics
+
+            if dry_run:
+                dest_audio = self.organizer.get_destination_path(match)
+                dest_lrc = dest_audio.with_suffix(".lrc") if (self.config.organization.save_lrc_file and match.synced_lyrics) else None
+                # Clean up downloaded temp file in dry-run
+                if opus_file.exists():
+                    try:
+                        opus_file.unlink()
+                    except Exception:
+                        pass
+                results.append((dest_audio, dest_lrc, match))
+                continue
 
             if on_progress:
                 on_progress("tagging", f"Tagging {opus_file.name}...")
@@ -359,6 +388,9 @@ class ProcessingPipeline:
         file_path: Path,
         origin: Optional[str] = None,
         force_rematch: bool = False,
+        dry_run: bool = False,
+        preserve_lossless: Optional[bool] = None,
+        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> Optional[Tuple[Path, Optional[Path], TrackMetadata]]:
         """Processes a single local audio or video file."""
@@ -399,13 +431,28 @@ class ProcessingPipeline:
             if on_progress:
                 on_progress("matching", f"Searching metadata for '{search_query}'...")
 
-            match = self.matcher.find_best_match(
-                query=search_query,
-                expected_title=raw_title,
-                expected_artist=raw_artist,
-                expected_album=info["album"],
-                expected_duration=duration,
-            )
+            match = None
+            if candidate_selector is not None:
+                ranked = self.matcher.get_ranked_candidates(
+                    query=search_query,
+                    expected_title=raw_title,
+                    expected_artist=raw_artist,
+                    expected_album=info["album"],
+                    expected_duration=duration,
+                )
+                if ranked:
+                    match = candidate_selector(ranked, search_query)
+                    if match and self.config.organization.embed_cover_art and match.cover_art_url and not match.cover_art_data:
+                        match.cover_art_data = self.matcher._download_cover(match.cover_art_url)
+
+            if not match and candidate_selector is None:
+                match = self.matcher.find_best_match(
+                    query=search_query,
+                    expected_title=raw_title,
+                    expected_artist=raw_artist,
+                    expected_album=info["album"],
+                    expected_duration=duration,
+                )
 
             if not match:
                 match = TrackMetadata(
@@ -453,6 +500,26 @@ class ProcessingPipeline:
             )
             match.synced_lyrics = synced_lyrics
 
+        should_preserve_flac = (
+            file_path.suffix.lower() == ".flac"
+            and (preserve_lossless if preserve_lossless is not None else getattr(self.config.downloader, "preserve_lossless", False))
+        )
+        ext = ".flac" if should_preserve_flac else ".opus"
+
+        if dry_run:
+            dest_audio = self.organizer.get_destination_path(match, extension=ext)
+            dest_lrc = dest_audio.with_suffix(".lrc") if (self.config.organization.save_lrc_file and match.synced_lyrics) else None
+            return dest_audio, dest_lrc, match
+
+        if should_preserve_flac:
+            if on_progress:
+                on_progress("tagging", f"Tagging FLAC {file_path.name}...")
+            self.tagger.tag_flac(file_path, match)
+            if on_progress:
+                on_progress("organizing", f"Placing in library: {match.artist} - {match.title} (FLAC)...")
+            dest_audio, dest_lrc = self.organizer.organize_track(file_path, match, extension=".flac")
+            return dest_audio, dest_lrc, match
+
         # Convert to high-quality .opus if not already .opus
         opus_file = self.convert_to_opus(file_path)
 
@@ -464,7 +531,7 @@ class ProcessingPipeline:
         if on_progress:
             on_progress("organizing", f"Placing in library: {match.artist} - {match.title}...")
 
-        dest_audio, dest_lrc = self.organizer.organize_track(opus_file, match)
+        dest_audio, dest_lrc = self.organizer.organize_track(opus_file, match, extension=".opus")
 
         # If source was not the converted temp file, remove original file if it was converted
         if file_path != opus_file and file_path.exists():
@@ -480,6 +547,9 @@ class ProcessingPipeline:
         directory: Path,
         origin: Optional[str] = None,
         force_rematch: bool = False,
+        dry_run: bool = False,
+        preserve_lossless: Optional[bool] = None,
+        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
         """Recursively processes all audio files in a directory."""
@@ -490,20 +560,29 @@ class ProcessingPipeline:
         files = [p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
 
         for file_path in sorted(files):
-            res = self.process_file(file_path, origin=origin, force_rematch=force_rematch, on_progress=on_progress)
+            res = self.process_file(
+                file_path,
+                origin=origin,
+                force_rematch=force_rematch,
+                dry_run=dry_run,
+                preserve_lossless=preserve_lossless,
+                candidate_selector=candidate_selector,
+                on_progress=on_progress,
+            )
             if res:
                 results.append(res)
-                # Clean up empty parent directories up to directory parent
-                parent = file_path.parent
-                while parent != directory.parent and parent.exists():
-                    try:
-                        if not any(parent.iterdir()):
-                            parent.rmdir()
-                            parent = parent.parent
-                        else:
+                if not dry_run:
+                    # Clean up empty parent directories up to directory parent
+                    parent = file_path.parent
+                    while parent != directory.parent and parent.exists():
+                        try:
+                            if not any(parent.iterdir()):
+                                parent.rmdir()
+                                parent = parent.parent
+                            else:
+                                break
+                        except Exception:
                             break
-                    except Exception:
-                        break
 
         return results
 
@@ -512,6 +591,9 @@ class ProcessingPipeline:
         paths: List[Path],
         origin: Optional[str] = None,
         force_rematch: bool = False,
+        dry_run: bool = False,
+        preserve_lossless: Optional[bool] = None,
+        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
         """Recursively processes all files and directories in the provided list."""
@@ -520,9 +602,27 @@ class ProcessingPipeline:
             if not path.exists():
                 continue
             if path.is_dir():
-                results.extend(self.process_directory(path, origin=origin, force_rematch=force_rematch, on_progress=on_progress))
+                results.extend(
+                    self.process_directory(
+                        path,
+                        origin=origin,
+                        force_rematch=force_rematch,
+                        dry_run=dry_run,
+                        preserve_lossless=preserve_lossless,
+                        candidate_selector=candidate_selector,
+                        on_progress=on_progress,
+                    )
+                )
             elif path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS:
-                res = self.process_file(path, origin=origin, force_rematch=force_rematch, on_progress=on_progress)
+                res = self.process_file(
+                    path,
+                    origin=origin,
+                    force_rematch=force_rematch,
+                    dry_run=dry_run,
+                    preserve_lossless=preserve_lossless,
+                    candidate_selector=candidate_selector,
+                    on_progress=on_progress,
+                )
                 if res:
                     results.append(res)
         return results
@@ -531,6 +631,7 @@ class ProcessingPipeline:
     def reorganize_paths(
         self,
         paths: Optional[List[Path]] = None,
+        dry_run: bool = False,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Path]]:
         """
@@ -581,40 +682,45 @@ class ProcessingPipeline:
                 date=info["date"],
             )
 
-            expected_dest = self.organizer.get_destination_path(meta)
+            file_ext = file_path.suffix.lower()
+            ext = file_ext if file_ext in [".flac", ".opus"] else ".opus"
+            expected_dest = self.organizer.get_destination_path(meta, extension=ext)
             if file_path.resolve() != expected_dest.resolve():
                 if on_progress:
                     on_progress("moving", f"Relocating: {file_path.name} -> {expected_dest.parent.name}")
 
-                expected_dest.parent.mkdir(parents=True, exist_ok=True)
-                
-                # Move companion .lrc if exists
-                old_lrc = file_path.with_suffix(".lrc")
-                new_lrc = expected_dest.with_suffix(".lrc")
-                if old_lrc.exists():
-                    shutil.move(str(old_lrc), str(new_lrc))
+                if not dry_run:
+                    expected_dest.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Move companion .lrc if exists
+                    old_lrc = file_path.with_suffix(".lrc")
+                    new_lrc = expected_dest.with_suffix(".lrc")
+                    if old_lrc.exists():
+                        shutil.move(str(old_lrc), str(new_lrc))
 
-                shutil.move(str(file_path), str(expected_dest))
-                moved.append((file_path, expected_dest))
+                    shutil.move(str(file_path), str(expected_dest))
 
-                # Clean up empty parent directories
-                parent = file_path.parent
-                while parent.resolve() != lib_dir_resolved and parent.exists():
-                    try:
-                        if not any(parent.iterdir()):
-                            parent.rmdir()
-                            parent = parent.parent
-                        else:
+                    # Clean up empty parent directories
+                    parent = file_path.parent
+                    while parent.resolve() != lib_dir_resolved and parent.exists():
+                        try:
+                            if not any(parent.iterdir()):
+                                parent.rmdir()
+                                parent = parent.parent
+                            else:
+                                break
+                        except Exception:
                             break
-                    except Exception:
-                        break
+
+                moved.append((file_path, expected_dest))
 
         return moved
 
     def reorganize_library(
         self,
         library_dir: Optional[Path] = None,
+        dry_run: bool = False,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Path]]:
         paths = [library_dir] if library_dir else None
-        return self.reorganize_paths(paths, on_progress=on_progress)
+        return self.reorganize_paths(paths, dry_run=dry_run, on_progress=on_progress)

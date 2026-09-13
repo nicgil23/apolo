@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Optional, Tuple
@@ -30,7 +31,9 @@ class LibraryOrganizer:
             pass
         return parent_dir / target_name
 
-    def get_destination_path(self, metadata: TrackMetadata) -> Path:
+    def get_destination_path(self, metadata: TrackMetadata, extension: str = ".opus") -> Path:
+        if not extension.startswith("."):
+            extension = f".{extension}"
         artist_clean = sanitize_filename(metadata.get_album_artist_or_artist())
         track_artist_clean = sanitize_filename(metadata.artist or "Unknown Artist")
         raw_album = metadata.album or "Single"
@@ -41,8 +44,7 @@ class LibraryOrganizer:
         title_clean = sanitize_filename(metadata.title)
 
         disc_num = metadata.disc_number or disc_from_album or 1
-        disc_total = metadata.disc_total or 1
-        is_multi_disc = disc_total > 1 or disc_num > 1 or disc_from_album is not None
+        disc_total = metadata.disc_total
 
         # Resolve case-matching artist directory to prevent FRO! vs Fro! splits
         artist_dir = self._resolve_case_insensitive_dir(self.library_dir, artist_clean)
@@ -53,7 +55,24 @@ class LibraryOrganizer:
             folder_artist = self._resolve_case_insensitive_dir(self.library_dir, "Various Artists")
             album_folder = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
             resolved_album_dir = self._resolve_case_insensitive_dir(folder_artist, album_folder)
-            file_name = f"{track_num:02d} - {track_artist_clean} - {title_clean}.opus"
+            file_name = f"{track_num:02d} - {track_artist_clean} - {title_clean}{extension}"
+
+            has_existing_multi_disc = False
+            if resolved_album_dir.exists():
+                try:
+                    has_existing_multi_disc = any(
+                        e.is_dir() and re.match(r"^(disc|cd|vol(?:ume)?|part)\s*\d+", e.name, re.IGNORECASE)
+                        for e in resolved_album_dir.iterdir()
+                    )
+                except Exception:
+                    pass
+
+            is_multi_disc = (
+                (disc_total is not None and disc_total > 1)
+                or disc_num > 1
+                or disc_from_album is not None
+                or has_existing_multi_disc
+            )
 
             if is_multi_disc and self.config.organization.multi_disc_folder:
                 dest_dir = self._resolve_case_insensitive_dir(resolved_album_dir, f"Disc {disc_num:02d}")
@@ -65,36 +84,54 @@ class LibraryOrganizer:
         if self.config.organization.group_singles and is_single_release(raw_album, metadata.track_total):
             dest_dir = self._resolve_case_insensitive_dir(artist_dir, "Singles")
             if date_str and date_str != "Unknown Year":
-                file_name = f"{title_clean} ({date_str}).opus"
+                file_name = f"{title_clean} ({date_str}){extension}"
             else:
-                file_name = f"{title_clean}.opus"
+                file_name = f"{title_clean}{extension}"
             return dest_dir / file_name
 
         # 3. Studio / Multi-Track Album
         album_folder = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
         resolved_album_dir = self._resolve_case_insensitive_dir(artist_dir, album_folder)
 
+        has_existing_multi_disc = False
+        if resolved_album_dir.exists():
+            try:
+                has_existing_multi_disc = any(
+                    e.is_dir() and re.match(r"^(disc|cd|vol(?:ume)?|part)\s*\d+", e.name, re.IGNORECASE)
+                    for e in resolved_album_dir.iterdir()
+                )
+            except Exception:
+                pass
+
+        is_multi_disc = (
+            (disc_total is not None and disc_total > 1)
+            or disc_num > 1
+            or disc_from_album is not None
+            or has_existing_multi_disc
+        )
+
         if is_multi_disc:
             if self.config.organization.multi_disc_folder:
                 dest_dir = self._resolve_case_insensitive_dir(resolved_album_dir, f"Disc {disc_num:02d}")
-                file_name = f"{track_num:02d} - {title_clean}.opus"
+                file_name = f"{track_num:02d} - {title_clean}{extension}"
             else:
                 dest_dir = resolved_album_dir
-                file_name = f"{disc_num}-{track_num:02d} - {title_clean}.opus"
+                file_name = f"{disc_num}-{track_num:02d} - {title_clean}{extension}"
         else:
             dest_dir = resolved_album_dir
-            file_name = f"{track_num:02d} - {title_clean}.opus"
+            file_name = f"{track_num:02d} - {title_clean}{extension}"
 
         return dest_dir / file_name
 
-    def organize_track(self, source_audio: Path, metadata: TrackMetadata) -> Tuple[Path, Optional[Path]]:
+    def organize_track(self, source_audio: Path, metadata: TrackMetadata, extension: Optional[str] = None) -> Tuple[Path, Optional[Path]]:
         """
         Moves the audio file to its destination directory in the music library
         and creates a companion .lrc file if synced lyrics are present.
         Handles collisions safely according to configuration.
         Returns: (dest_audio_path, dest_lrc_path_or_None)
         """
-        dest_audio = self.get_destination_path(metadata)
+        ext = extension or (source_audio.suffix if source_audio.suffix.lower() == ".flac" else ".opus")
+        dest_audio = self.get_destination_path(metadata, extension=ext)
         dest_audio.parent.mkdir(parents=True, exist_ok=True)
 
         # Handle destination collisions
