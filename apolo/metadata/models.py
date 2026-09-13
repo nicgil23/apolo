@@ -14,6 +14,7 @@ METADATOS_BIBLIOTECA = [
     "disc_total",
     "compilation",
     "cover_art",
+    "origin",
 ]
 
 
@@ -36,6 +37,7 @@ class TrackMetadata:
     duration: Optional[float] = None
     provider_source: Optional[str] = None
     source_id: Optional[str] = None
+    origin: Optional[str] = None
 
     def get_album_artist_or_artist(self) -> str:
         return self.album_artist or self.artist or "Unknown Artist"
@@ -59,4 +61,6 @@ class TrackMetadata:
             "disc_total": self.disc_total,
             "compilation": self.compilation,
             "cover_art": bool(self.cover_art_data or self.cover_art_url),
+            "origin": self.origin,
         }
+

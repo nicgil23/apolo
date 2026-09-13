@@ -10,11 +10,20 @@ from apolo.config import get_config_path, load_config
 from apolo.metadata.models import METADATOS_BIBLIOTECA, TrackMetadata
 from apolo.pipeline import ProcessingPipeline
 
+
 app = typer.Typer(
     name="apolo",
-    help="Apolo - Music Downloader, Metadata Tagger, and Library Organizer.",
+    help="""[bold cyan]Apolo[/bold cyan] - Modern CLI Music Suite: Lossless/Hi-Fi to Opus Transcoder, Smart Metadata Tagger, Synced Lyrics Downloader & Library Organizer.
+
+[bold yellow]Key Features:[/bold yellow]
+  • [green]Audio/Video Transcoding[/green]: Converts any format (.flac, .mp3, .wav, .m4a, .mp4, .mkv, etc.) to consistent, acoustically transparent high-quality [bold].opus[/bold] (256k VBR).
+  • [green]Metadata Tagging & Preservation[/green]: Preserves native tags and embedded cover art from pre-tagged sources (e.g. Soulseek), with automatic fallback to Deezer, iTunes, and MusicBrainz.
+  • [green]Origin Tagging[/green]: Tracks track origins ([bold]ORIGIN / SOURCE[/bold]) automatically (e.g., YouTube, SoundCloud) or via CLI flags (e.g., [bold]--origin soulseek[/bold]).
+  • [green]Synced Lyrics[/green]: Fetches and embeds timed synced LRC lyrics into the Opus container and sidecar files.
+  • [green]Clean Library Structure[/green]: Organizes tracks neatly into Artist/Album folders, handles compilations, multi-disc sets, and single releases.""",
     no_args_is_help=True,
     add_completion=False,
+    rich_markup_mode="rich",
 )
 console = Console()
 
@@ -34,6 +43,7 @@ def display_track_summary(dest_audio: Path, dest_lrc: Optional[Path], meta: Trac
     table.add_row("Disc Total", str(meta.disc_total or "-"))
     table.add_row("Release Date", str(meta.date or "-"))
     table.add_row("Genre", str(meta.genre or "-"))
+    table.add_row("Origin / Source", str(meta.origin or "-"))
     table.add_row("Compilation", "Yes" if meta.compilation else "No")
     table.add_row("Cover Art", "Embedded (High Quality)" if meta.cover_art_data or meta.cover_art_url else "None")
     table.add_row("Synced Lyrics", "Embedded + Sidecar .lrc" if dest_lrc else ("Embedded" if meta.synced_lyrics else "Not found"))
@@ -46,9 +56,15 @@ def display_track_summary(dest_audio: Path, dest_lrc: Optional[Path], meta: Trac
 @app.command(name="download")
 @app.command(name="dl", hidden=True)
 def download_cmd(
-    urls: List[str] = typer.Argument(..., help="URLs from YouTube or SoundCloud to download"),
+    urls: List[str] = typer.Argument(..., help="URLs from YouTube, SoundCloud, or supported extractors to download"),
+    origin: Optional[str] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="Custom origin/source identifier (e.g. 'youtube', 'soundcloud'). Auto-detected by default.",
+    ),
 ):
-    """Download songs from YouTube / SoundCloud in high quality .opus, tag and organize."""
+    """[bold green]Download[/bold green] tracks from YouTube / SoundCloud in high quality [bold].opus[/bold], fetch metadata/lyrics, tag origin, and organize into your library."""
     config = load_config()
     pipeline = ProcessingPipeline(config)
 
@@ -59,7 +75,7 @@ def download_cmd(
                 status.update(f"[bold cyan]{msg}[/bold cyan]")
 
             try:
-                results = pipeline.process_url(url, on_progress=update_status)
+                results = pipeline.process_url(url, origin=origin, on_progress=update_status)
                 if not results:
                     console.print(f"[bold red]Error: No audio could be processed for:[/bold red] {url}")
                 for dest_audio, dest_lrc, meta in results:
@@ -71,9 +87,24 @@ def download_cmd(
 @app.command(name="process")
 @app.command(name="tag", hidden=True)
 def process_cmd(
-    paths: List[Path] = typer.Argument(..., help="Path to audio file(s) or directories to tag and organize"),
+    paths: List[Path] = typer.Argument(
+        ...,
+        help="Path to audio/video file(s) or directories (e.g. Soulseek downloads, FLAC albums, MP3s, MP4s)",
+    ),
+    origin: Optional[str] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="Origin tag to assign (e.g. 'soulseek', 'bandcamp', 'cd_rip'). Preserves existing file tag if omitted.",
+    ),
+    force_rematch: bool = typer.Option(
+        False,
+        "--force-rematch",
+        "-f",
+        help="Force querying online providers (Deezer, iTunes, MusicBrainz) even if the file is already well-tagged.",
+    ),
 ):
-    """Tag existing audio files, fetch synced lyrics, and organize into library."""
+    """[bold green]Process and Tag[/bold green] existing audio or video files into high-quality [bold].opus[/bold], preserve valid metadata (Soulseek), tag origin, and organize into library."""
     config = load_config()
     pipeline = ProcessingPipeline(config)
 
@@ -83,12 +114,14 @@ def process_cmd(
             continue
 
         if path.is_dir():
-            console.print(f"\n[bold magenta]Scanning directory:[/bold magenta] {path}")
+            console.print(f"\n[bold magenta]Scanning directory (recursive):[/bold magenta] {path}")
             with console.status("[bold cyan]Processing audio files...[/bold cyan]") as status:
                 def update_status(step: str, msg: str):
                     status.update(f"[bold cyan]{msg}[/bold cyan]")
 
-                results = pipeline.process_directory(path, on_progress=update_status)
+                results = pipeline.process_directory(path, origin=origin, force_rematch=force_rematch, on_progress=update_status)
+                if not results:
+                    console.print(f"[yellow]No supported audio/video files found in:[/yellow] {path}")
                 for dest_audio, dest_lrc, meta in results:
                     display_track_summary(dest_audio, dest_lrc, meta)
         else:
@@ -97,7 +130,7 @@ def process_cmd(
                 def update_status(step: str, msg: str):
                     status.update(f"[bold cyan]{msg}[/bold cyan]")
 
-                res = pipeline.process_file(path, on_progress=update_status)
+                res = pipeline.process_file(path, origin=origin, force_rematch=force_rematch, on_progress=update_status)
                 if res:
                     dest_audio, dest_lrc, meta = res
                     display_track_summary(dest_audio, dest_lrc, meta)
@@ -106,8 +139,21 @@ def process_cmd(
 
 
 @app.command(name="inbox")
-def inbox_cmd():
-    """Process all audio files in your configured Inbox directory."""
+def inbox_cmd(
+    origin: Optional[str] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="Origin tag to assign to inbox tracks (defaults to config default_origin).",
+    ),
+    force_rematch: bool = typer.Option(
+        False,
+        "--force-rematch",
+        "-f",
+        help="Force online metadata rematching for inbox files even if already well-tagged.",
+    ),
+):
+    """[bold green]Inbox Processor[/bold green]: Process and organize all audio/video files dropped into your configured Inbox directory."""
     config = load_config()
     inbox_dir = config.directories.inbox_dir
     if not inbox_dir.exists():
@@ -121,7 +167,7 @@ def inbox_cmd():
         def update_status(step: str, msg: str):
             status.update(f"[bold cyan]{msg}[/bold cyan]")
 
-        results = pipeline.process_directory(inbox_dir, on_progress=update_status)
+        results = pipeline.process_directory(inbox_dir, origin=origin, force_rematch=force_rematch, on_progress=update_status)
         if not results:
             console.print("[yellow]No audio files found in inbox.[/yellow]")
         for dest_audio, dest_lrc, meta in results:
@@ -131,22 +177,26 @@ def inbox_cmd():
 @app.command(name="reorganize")
 @app.command(name="tidy", hidden=True)
 def reorganize_cmd(
-    library_dir: Optional[Path] = typer.Argument(None, help="Path to music library directory (default: configured library_dir)"),
+    paths: Optional[List[Path]] = typer.Argument(
+        None,
+        help="Path to audio file(s) or directories to reorganize (default: library_dir)",
+    ),
 ):
-    """Reorganize existing music library according to current business logic rules."""
+    """[bold green]Reorganize[/bold green] existing music files in your library according to current folder rules and path templates."""
     config = load_config()
-    target_dir = library_dir or config.directories.library_dir
-    if not target_dir.exists():
-        console.print(f"[bold red]Library directory not found:[/bold red] {target_dir}")
-        return
-
     pipeline = ProcessingPipeline(config)
-    console.print(f"\n[bold magenta]Reorganizing library:[/bold magenta] {target_dir}")
+
+    if paths:
+        target_desc = ", ".join(str(p) for p in paths)
+    else:
+        target_desc = str(config.directories.library_dir)
+
+    console.print(f"\n[bold magenta]Reorganizing:[/bold magenta] {target_desc}")
     with console.status("[bold cyan]Analyzing and relocating files...[/bold cyan]") as status:
         def update_status(step: str, msg: str):
             status.update(f"[bold cyan]{msg}[/bold cyan]")
 
-        moved = pipeline.reorganize_library(target_dir, on_progress=update_status)
+        moved = pipeline.reorganize_paths(paths, on_progress=update_status)
 
     if not moved:
         console.print("[bold green]All files are already correctly organized.[/bold green]")
@@ -161,7 +211,7 @@ def reorganize_cmd(
 
 @app.command(name="config")
 def config_cmd():
-    """Show current Apolo configuration."""
+    """[bold green]View Configuration[/bold green]: Show current Apolo configuration, directories, audio transcoding settings, and metadata providers."""
     config = load_config()
     config_path = get_config_path()
 
@@ -173,23 +223,25 @@ def config_cmd():
   - Temp Dir:     {config.directories.temp_dir}
 
 [bold cyan]Organization:[/bold cyan]
-  - Path Template:     {config.organization.path_template}
-  - Multi-Disc Folder: {config.organization.multi_disc_folder}
-  - Various Artists:   {config.organization.various_artists_folder}
-  - Group Singles:     {config.organization.group_singles}
+  - Path Template:      {config.organization.path_template}
+  - Multi-Disc Folder:  {config.organization.multi_disc_folder}
+  - Various Artists:    {config.organization.various_artists_folder}
+  - Group Singles:      {config.organization.group_singles}
   - Collision Strategy: {config.organization.collision_strategy}
-  - Save .lrc file:    {config.organization.save_lrc_file}
-  - Embed Cover Art:   {config.organization.embed_cover_art} (Max: {config.organization.max_cover_size}px)
+  - Save .lrc file:     {config.organization.save_lrc_file}
+  - Embed Cover Art:    {config.organization.embed_cover_art} (Max: {config.organization.max_cover_size}px)
 
-[bold cyan]Downloader:[/bold cyan]
-  - Codec:   {config.downloader.audio_format}
-  - Quality: {config.downloader.audio_quality} (Best VBR)
+[bold cyan]Transcoder & Downloader:[/bold cyan]
+  - Codec:              {config.downloader.audio_format}
+  - Bitrate:            {config.downloader.audio_bitrate} (Acoustically transparent VBR)
+  - Default Origin:     {config.downloader.default_origin}
+  - Preserve Tags:      {config.downloader.preserve_existing_tags} (Preserve Soulseek / Native metadata)
 
-[bold cyan]Metadata & Lyrics:[/bold cyan]
-  - Deezer:       {config.providers.prefer_deezer}
-  - iTunes:       {config.providers.prefer_itunes}
-  - MusicBrainz:  {config.providers.prefer_musicbrainz}
-  - Synced Only:  {config.providers.synced_lyrics_only}
+[bold cyan]Metadata & Lyrics Providers:[/bold cyan]
+  - Deezer:             {config.providers.prefer_deezer}
+  - iTunes:             {config.providers.prefer_itunes}
+  - MusicBrainz:        {config.providers.prefer_musicbrainz}
+  - Synced Only:        {config.providers.synced_lyrics_only}
 """
     console.print(Panel(panel_content, title="Apolo Configuration", border_style="bold blue"))
 
@@ -197,9 +249,12 @@ def config_cmd():
 @app.command(name="info")
 @app.command(name="inspect", hidden=True)
 def info_cmd(
-    paths: List[Path] = typer.Argument(..., help="Path to audio file(s) to inspect metadata"),
+    paths: List[Path] = typer.Argument(
+        ...,
+        help="Path to audio/video file(s) or directories to inspect metadata, origin, cover art, and lyrics",
+    ),
 ):
-    """View detailed metadata, embedded cover art info, and lyrics of audio file(s)."""
+    """[bold green]Inspect Audio Metadata[/bold green]: View detailed metadata tags (Vorbis/ID3), origin, embedded cover art info, audio specs, and lyrics."""
     from apolo.inspector import inspect_track
 
     for path in paths:
@@ -222,3 +277,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

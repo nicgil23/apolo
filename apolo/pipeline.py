@@ -16,7 +16,65 @@ from apolo.organizer import LibraryOrganizer
 from apolo.tagger import AudioTagger
 from apolo.utils import clean_track_title, extract_primary_artist
 
-AUDIO_EXTENSIONS = {".opus", ".mp3", ".flac", ".m4a", ".ogg", ".wav", ".aac"}
+AUDIO_EXTENSIONS = {
+    # Audio formats
+    ".opus",
+    ".ogg",
+    ".flac",
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".aiff",
+    ".aif",
+    ".wma",
+    ".alac",
+    # Video containers
+    ".mp4",
+    ".mkv",
+    ".webm",
+    ".avi",
+    ".mov",
+    ".flv",
+    ".m4v",
+}
+
+
+def is_well_tagged(info: dict) -> bool:
+    """
+    Determines if a local track already has complete and reliable native metadata
+    (e.g., downloaded from Soulseek or previously tagged) so that
+    online provider rematching can be skipped to preserve original tags.
+    """
+    if not info.get("has_native_tags"):
+        return False
+
+    title = (info.get("title") or "").strip()
+    artist = (info.get("artist") or "").strip()
+    if not title or not artist:
+        return False
+    if artist.lower() in ["unknown", "unknown artist", "various artists"]:
+        if not info.get("album") or info["album"].lower() in ["unknown", "unknown album"]:
+            return False
+
+    album = (info.get("album") or "").strip()
+    has_extra_meta = any([
+        info.get("track_number") is not None,
+        bool(info.get("date")),
+        bool(info.get("genre")),
+        bool(info.get("cover_art_data")),
+        bool(info.get("album_artist")),
+    ])
+
+    # If has title, artist, album and at least one extra metadata field
+    if album and album.lower() not in ["unknown", "unknown album"] and has_extra_meta:
+        return True
+
+    # If it has title, artist and (track_number and date)
+    if info.get("track_number") is not None and bool(info.get("date")):
+        return True
+
+    return False
 
 
 class ProcessingPipeline:
@@ -31,6 +89,7 @@ class ProcessingPipeline:
     def process_url(
         self,
         url: str,
+        origin: Optional[str] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
         """
@@ -40,7 +99,7 @@ class ProcessingPipeline:
         if on_progress:
             on_progress("downloading", f"Downloading audio from {url}...")
 
-        downloaded_items = self.downloader.download_url(url)
+        downloaded_items = self.downloader.download_url(url, origin=origin)
         results = []
 
         for item in downloaded_items:
@@ -94,6 +153,9 @@ class ProcessingPipeline:
                     duration=item.duration,
                 )
 
+            # Set origin
+            match.origin = item.origin or origin or self.config.downloader.default_origin
+
             if on_progress:
                 on_progress("lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'...")
 
@@ -119,31 +181,38 @@ class ProcessingPipeline:
         return results
 
     def convert_to_opus(self, input_file: Path) -> Path:
-        """Converts any audio file to .opus in temp_dir using ffmpeg at max quality."""
+        """
+        Converts any audio/video file to .opus in temp_dir using ffmpeg at maximum perceptible quality.
+        Uses libopus with VBR, compression level 10, and 48kHz audio resample.
+        """
         if input_file.suffix.lower() == ".opus":
             return input_file
 
         output_file = self.config.directories.temp_dir / f"{input_file.stem}.opus"
+        bitrate = getattr(self.config.downloader, "audio_bitrate", "256k")
         cmd = [
             "ffmpeg",
             "-y",
             "-i",
             str(input_file),
+            "-vn",
             "-c:a",
             "libopus",
             "-b:a",
-            "320k",
+            bitrate,
             "-vbr",
             "on",
             "-compression_level",
             "10",
+            "-ar",
+            "48000",
             str(output_file),
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         return output_file
 
     def extract_file_info(self, file_path: Path) -> dict:
-        """Extract existing title, artist, album, date, disc, track from file metadata or filename."""
+        """Extract existing title, artist, album, date, disc, track, origin, cover from file metadata or filename."""
         raw_title = None
         raw_artist = None
         raw_album_artist = None
@@ -154,7 +223,14 @@ class ProcessingPipeline:
         raw_disc_total = None
         raw_compilation = False
         raw_date = None
+        raw_genre = None
+        raw_origin = None
+        raw_lyrics = None
         duration = None
+        has_native_tags = False
+
+        # Extract embedded cover art
+        cover_art_data = AudioTagger.extract_cover_art_from_file(file_path)
 
         try:
             audio = mutagen.File(file_path)
@@ -162,6 +238,7 @@ class ProcessingPipeline:
                 duration = getattr(audio.info, "length", None)
                 tags = getattr(audio, "tags", None)
                 if tags:
+                    has_native_tags = len(tags) > 0
                     for k in ["TITLE", "title", "TIT2"]:
                         if k in tags:
                             raw_title = str(tags[k][0])
@@ -182,6 +259,18 @@ class ProcessingPipeline:
                         if k in tags:
                             raw_date = str(tags[k][0])
                             break
+                    for k in ["GENRE", "genre", "TCON"]:
+                        if k in tags:
+                            raw_genre = str(tags[k][0])
+                            break
+                    for k in ["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"]:
+                        if k in tags:
+                            raw_origin = str(tags[k][0])
+                            break
+                    for k in ["LYRICS", "lyrics", "USLT", "UNSYNCEDLYRICS"]:
+                        if k in tags:
+                            raw_lyrics = str(tags[k][0])
+                            break
                     for k in ["TRACKNUMBER", "tracknumber", "TRCK"]:
                         if k in tags:
                             try:
@@ -192,6 +281,15 @@ class ProcessingPipeline:
                             except Exception:
                                 pass
                             break
+                    if raw_track_total is None:
+                        for k in ["TRACKTOTAL", "tracktotal", "TOTALTRACKS", "totaltracks"]:
+                            if k in tags:
+                                try:
+                                    raw_track_total = int(str(tags[k][0]).split("/")[0])
+                                    break
+                                except Exception:
+                                    pass
+
                     for k in ["DISCNUMBER", "discnumber", "TPOS"]:
                         if k in tags:
                             try:
@@ -202,10 +300,20 @@ class ProcessingPipeline:
                             except Exception:
                                 pass
                             break
+                    if raw_disc_total is None:
+                        for k in ["DISCTOTAL", "disctotal", "TOTALDISCS", "totaldiscs"]:
+                            if k in tags:
+                                try:
+                                    raw_disc_total = int(str(tags[k][0]).split("/")[0])
+                                    break
+                                except Exception:
+                                    pass
+
                     for k in ["COMPILATION", "compilation", "TCMP"]:
                         if k in tags:
                             raw_compilation = str(tags[k][0]) in ["1", "true", "True"]
                             break
+
         except Exception:
             pass
 
@@ -238,15 +346,22 @@ class ProcessingPipeline:
             "disc_total": raw_disc_total,
             "compilation": raw_compilation,
             "date": raw_date,
+            "genre": raw_genre,
+            "origin": raw_origin,
+            "lyrics": raw_lyrics,
             "duration": duration,
+            "cover_art_data": cover_art_data,
+            "has_native_tags": has_native_tags,
         }
 
     def process_file(
         self,
         file_path: Path,
+        origin: Optional[str] = None,
+        force_rematch: bool = False,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> Optional[Tuple[Path, Optional[Path], TrackMetadata]]:
-        """Processes a single local audio file."""
+        """Processes a single local audio or video file."""
         if not file_path.exists() or file_path.suffix.lower() not in AUDIO_EXTENSIONS:
             return None
 
@@ -257,20 +372,11 @@ class ProcessingPipeline:
         raw_title = info["title"]
         raw_artist = info["artist"]
         duration = info["duration"]
-        search_query = f"{raw_artist} {raw_title}" if raw_artist else raw_title
 
-        if on_progress:
-            on_progress("matching", f"Searching metadata for '{search_query}'...")
+        well_tagged = is_well_tagged(info) and self.config.downloader.preserve_existing_tags and not force_rematch
 
-        match = self.matcher.find_best_match(
-            query=search_query,
-            expected_title=raw_title,
-            expected_artist=raw_artist,
-            expected_album=info["album"],
-            expected_duration=duration,
-        )
-
-        if not match:
+        if well_tagged:
+            # Preserve existing metadata completely without online provider mutations
             match = TrackMetadata(
                 title=raw_title or file_path.stem,
                 artist=raw_artist or "Unknown Artist",
@@ -282,28 +388,72 @@ class ProcessingPipeline:
                 disc_total=info["disc_total"],
                 compilation=info["compilation"],
                 date=info["date"],
+                genre=info["genre"],
+                cover_art_data=info["cover_art_data"],
+                synced_lyrics=info["lyrics"],
                 duration=duration,
+                provider_source="existing_metadata",
             )
         else:
-            if match.track_number is None and info["track_number"] is not None:
-                match.track_number = info["track_number"]
-            if match.track_total is None and info["track_total"] is not None:
-                match.track_total = info["track_total"]
-            if not match.album and info["album"]:
-                match.album = info["album"]
+            search_query = f"{raw_artist} {raw_title}" if raw_artist else raw_title
+            if on_progress:
+                on_progress("matching", f"Searching metadata for '{search_query}'...")
 
-        if on_progress:
-            on_progress("lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'...")
+            match = self.matcher.find_best_match(
+                query=search_query,
+                expected_title=raw_title,
+                expected_artist=raw_artist,
+                expected_album=info["album"],
+                expected_duration=duration,
+            )
 
-        synced_lyrics = self.lyrics_provider.get_synced_lyrics(
-            track_name=match.title,
-            artist_name=match.artist,
-            album_name=match.album,
-            duration=match.duration or duration,
-        )
-        match.synced_lyrics = synced_lyrics
+            if not match:
+                match = TrackMetadata(
+                    title=raw_title or file_path.stem,
+                    artist=raw_artist or "Unknown Artist",
+                    album_artist=info["album_artist"] or raw_artist or "Unknown Artist",
+                    album=info["album"] or "Single",
+                    track_number=info["track_number"],
+                    track_total=info["track_total"],
+                    disc_number=info["disc_number"],
+                    disc_total=info["disc_total"],
+                    compilation=info["compilation"],
+                    date=info["date"],
+                    genre=info["genre"],
+                    cover_art_data=info["cover_art_data"],
+                    synced_lyrics=info["lyrics"],
+                    duration=duration,
+                )
+            else:
+                if match.track_number is None and info["track_number"] is not None:
+                    match.track_number = info["track_number"]
+                if match.track_total is None and info["track_total"] is not None:
+                    match.track_total = info["track_total"]
+                if not match.album and info["album"]:
+                    match.album = info["album"]
+                if not match.genre and info["genre"]:
+                    match.genre = info["genre"]
+                if not match.cover_art_data and info["cover_art_data"]:
+                    match.cover_art_data = info["cover_art_data"]
 
-        # Convert to opus if necessary
+        # Assign origin: CLI param > existing tag in file > config default
+        final_origin = origin or info.get("origin") or self.config.downloader.default_origin
+        match.origin = final_origin
+
+        # Fetch synced lyrics if missing
+        if not match.synced_lyrics:
+            if on_progress:
+                on_progress("lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'...")
+
+            synced_lyrics = self.lyrics_provider.get_synced_lyrics(
+                track_name=match.title,
+                artist_name=match.artist,
+                album_name=match.album,
+                duration=match.duration or duration,
+            )
+            match.synced_lyrics = synced_lyrics
+
+        # Convert to high-quality .opus if not already .opus
         opus_file = self.convert_to_opus(file_path)
 
         if on_progress:
@@ -328,37 +478,95 @@ class ProcessingPipeline:
     def process_directory(
         self,
         directory: Path,
+        origin: Optional[str] = None,
+        force_rematch: bool = False,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
         """Recursively processes all audio files in a directory."""
         results = []
+        if not directory.exists() or not directory.is_dir():
+            return results
+
         files = [p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
 
         for file_path in sorted(files):
-            res = self.process_file(file_path, on_progress=on_progress)
+            res = self.process_file(file_path, origin=origin, force_rematch=force_rematch, on_progress=on_progress)
             if res:
                 results.append(res)
+                # Clean up empty parent directories up to directory parent
+                parent = file_path.parent
+                while parent != directory.parent and parent.exists():
+                    try:
+                        if not any(parent.iterdir()):
+                            parent.rmdir()
+                            parent = parent.parent
+                        else:
+                            break
+                    except Exception:
+                        break
 
         return results
 
-    def reorganize_library(
+    def process_paths(
         self,
-        library_dir: Optional[Path] = None,
+        paths: List[Path],
+        origin: Optional[str] = None,
+        force_rematch: bool = False,
+        on_progress: Optional[Callable[[str, str], None]] = None,
+    ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
+        """Recursively processes all files and directories in the provided list."""
+        results = []
+        for path in paths:
+            if not path.exists():
+                continue
+            if path.is_dir():
+                results.extend(self.process_directory(path, origin=origin, force_rematch=force_rematch, on_progress=on_progress))
+            elif path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS:
+                res = self.process_file(path, origin=origin, force_rematch=force_rematch, on_progress=on_progress)
+                if res:
+                    results.append(res)
+        return results
+
+
+    def reorganize_paths(
+        self,
+        paths: Optional[List[Path]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> List[Tuple[Path, Path]]:
         """
-        Scans all files in library_dir, recalculates paths based on current rules,
+        Scans all files in given paths (or library_dir if None/empty), recalculates paths based on current rules,
         moves files/lyrics that are misplaced, and removes empty directories.
         Returns list of (old_path, new_path)
         """
-        target_dir = library_dir or self.config.directories.library_dir
-        if not target_dir.exists():
-            return []
+        if not paths:
+            target_dir = self.config.directories.library_dir
+            if not target_dir.exists():
+                return []
+            candidate_files = [p for p in target_dir.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+        else:
+            candidate_files = []
+            for p in paths:
+                if not p.exists():
+                    continue
+                if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
+                    candidate_files.append(p)
+                elif p.is_dir():
+                    candidate_files.extend([f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS])
 
-        files = [p for p in target_dir.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+        # Deduplicate and sort
+        seen = set()
+        files = []
+        for f in candidate_files:
+            resolved = f.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                files.append(f)
+        files.sort()
+
         moved = []
+        lib_dir_resolved = self.config.directories.library_dir.resolve()
 
-        for file_path in sorted(files):
+        for file_path in files:
             info = self.extract_file_info(file_path)
             meta = TrackMetadata(
                 title=info["title"] or file_path.stem,
@@ -391,11 +599,22 @@ class ProcessingPipeline:
 
                 # Clean up empty parent directories
                 parent = file_path.parent
-                while parent != target_dir and parent.exists():
-                    if not any(parent.iterdir()):
-                        parent.rmdir()
-                        parent = parent.parent
-                    else:
+                while parent.resolve() != lib_dir_resolved and parent.exists():
+                    try:
+                        if not any(parent.iterdir()):
+                            parent.rmdir()
+                            parent = parent.parent
+                        else:
+                            break
+                    except Exception:
                         break
 
         return moved
+
+    def reorganize_library(
+        self,
+        library_dir: Optional[Path] = None,
+        on_progress: Optional[Callable[[str, str], None]] = None,
+    ) -> List[Tuple[Path, Path]]:
+        paths = [library_dir] if library_dir else None
+        return self.reorganize_paths(paths, on_progress=on_progress)

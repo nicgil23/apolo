@@ -28,6 +28,9 @@ class OrganizationConfig:
 class DownloaderConfig:
     audio_format: str = "opus"
     audio_quality: str = "0"
+    audio_bitrate: str = "256k"
+    default_origin: str = "local"
+    preserve_existing_tags: bool = True
     concurrent_downloads: int = 3
 
 
@@ -88,6 +91,9 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
     downloader = DownloaderConfig(
         audio_format=dl_data.get("audio_format", "opus"),
         audio_quality=str(dl_data.get("audio_quality", "0")),
+        audio_bitrate=str(dl_data.get("audio_bitrate", "256k")),
+        default_origin=str(dl_data.get("default_origin", "local")),
+        preserve_existing_tags=bool(dl_data.get("preserve_existing_tags", True)),
         concurrent_downloads=int(dl_data.get("concurrent_downloads", 3)),
     )
 
@@ -104,3 +110,4 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
         downloader=downloader,
         providers=providers,
     )
+

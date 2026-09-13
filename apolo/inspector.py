@@ -82,6 +82,7 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     date = get_first_tag(tags, ["DATE", "date", "TDRC", "TYER"]) or "-"
     genre = get_first_tag(tags, ["GENRE", "genre", "TCON"]) or "-"
     compilation = get_first_tag(tags, ["COMPILATION", "compilation", "TCMP"]) or "-"
+    origin = get_first_tag(tags, ["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"]) or "-"
 
     # Lyrics check
     lyrics_raw = get_first_tag(tags, ["LYRICS", "lyrics", "USLT"])
@@ -140,9 +141,11 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     table.add_row("Release Date", date)
     table.add_row("Genre", genre)
     table.add_row("Compilation", compilation)
+    table.add_row("Origin", origin)
     table.add_section()
     table.add_row("Cover Art", cover_info)
     table.add_row("Lyrics", lyrics_display)
+
 
     console.print()
     console.print(table)

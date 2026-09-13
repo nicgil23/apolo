@@ -21,6 +21,7 @@ class DownloadedTrackInfo:
     release_date: Optional[str] = None
     duration: Optional[float] = None
     thumbnail_url: Optional[str] = None
+    origin: Optional[str] = None
 
 
 class AudioDownloader:
@@ -29,7 +30,7 @@ class AudioDownloader:
         self.temp_dir = self.config.directories.temp_dir
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
-    def download_url(self, url: str) -> List[DownloadedTrackInfo]:
+    def download_url(self, url: str, origin: Optional[str] = None) -> List[DownloadedTrackInfo]:
         """
         Downloads URL using yt-dlp to best quality .opus audio.
         Returns a list of DownloadedTrackInfo objects containing rich source metadata.
@@ -54,6 +55,19 @@ class AudioDownloader:
             info = ydl.extract_info(url, download=True)
             if not info:
                 return []
+
+            # Determine origin/source
+            inferred_origin = origin
+            if not inferred_origin:
+                extractor = (info.get("extractor") or "").lower()
+                if "youtube" in extractor or "youtu" in url.lower():
+                    inferred_origin = "youtube"
+                elif "soundcloud" in extractor or "soundcloud" in url.lower():
+                    inferred_origin = "soundcloud"
+                elif extractor:
+                    inferred_origin = extractor
+                else:
+                    inferred_origin = "download"
 
             # Handle playlists or single video
             is_playlist = "entries" in info and info["entries"]
@@ -120,7 +134,9 @@ class AudioDownloader:
                             release_date=formatted_date,
                             duration=duration,
                             thumbnail_url=thumbnail,
+                            origin=inferred_origin,
                         )
                     )
 
         return results
+

@@ -143,3 +143,31 @@ def test_collision_handling(tmp_path):
     assert dest2.name == "01 - Song (1).opus"
     assert dest2.exists()
     assert dest1.exists()
+
+
+def test_reorganize_paths_recursive(tmp_path):
+    library_dir = tmp_path / "Music"
+    config = ApoloConfig(
+        directories=DirectoriesConfig(library_dir=library_dir),
+        organization=OrganizationConfig(group_singles=True),
+    )
+    pipeline = ProcessingPipeline(config)
+
+    # Place a single track in wrong location
+    wrong_folder = library_dir / "WrongArtist" / "WrongAlbum"
+    wrong_folder.mkdir(parents=True)
+    wrong_file = wrong_folder / "01 - Good Title.opus"
+    wrong_file.write_bytes(b"dummy audio")
+    wrong_lrc = wrong_folder / "01 - Good Title.lrc"
+    wrong_lrc.write_text("[00:01.00] test lyric")
+
+    # Run reorganize on wrong_folder
+    moved = pipeline.reorganize_paths([wrong_folder])
+    assert len(moved) == 1
+    old_p, new_p = moved[0]
+    assert old_p == wrong_file
+    assert new_p.exists()
+    assert new_p.with_suffix(".lrc").exists()
+    assert not wrong_file.exists()
+    assert not wrong_lrc.exists()
+
