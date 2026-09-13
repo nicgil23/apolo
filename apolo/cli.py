@@ -30,9 +30,11 @@ def display_track_summary(dest_audio: Path, dest_lrc: Optional[Path], meta: Trac
     table.add_row("Album", meta.album or "Single")
     table.add_row("Track Number", str(meta.track_number or "-"))
     table.add_row("Track Total", str(meta.track_total or "-"))
+    table.add_row("Disc Number", str(meta.disc_number or "-"))
+    table.add_row("Disc Total", str(meta.disc_total or "-"))
     table.add_row("Release Date", str(meta.date or "-"))
     table.add_row("Genre", str(meta.genre or "-"))
-    table.add_row("Disc Number", str(meta.disc_number or "-"))
+    table.add_row("Compilation", "Yes" if meta.compilation else "No")
     table.add_row("Cover Art", "Embedded (High Quality)" if meta.cover_art_data or meta.cover_art_url else "None")
     table.add_row("Synced Lyrics", "Embedded + Sidecar .lrc" if dest_lrc else ("Embedded" if meta.synced_lyrics else "Not found"))
     table.add_row("Destination", str(dest_audio))
@@ -126,6 +128,37 @@ def inbox_cmd():
             display_track_summary(dest_audio, dest_lrc, meta)
 
 
+@app.command(name="reorganize")
+@app.command(name="tidy", hidden=True)
+def reorganize_cmd(
+    library_dir: Optional[Path] = typer.Argument(None, help="Path to music library directory (default: configured library_dir)"),
+):
+    """Reorganize existing music library according to current business logic rules."""
+    config = load_config()
+    target_dir = library_dir or config.directories.library_dir
+    if not target_dir.exists():
+        console.print(f"[bold red]Library directory not found:[/bold red] {target_dir}")
+        return
+
+    pipeline = ProcessingPipeline(config)
+    console.print(f"\n[bold magenta]Reorganizing library:[/bold magenta] {target_dir}")
+    with console.status("[bold cyan]Analyzing and relocating files...[/bold cyan]") as status:
+        def update_status(step: str, msg: str):
+            status.update(f"[bold cyan]{msg}[/bold cyan]")
+
+        moved = pipeline.reorganize_library(target_dir, on_progress=update_status)
+
+    if not moved:
+        console.print("[bold green]All files are already correctly organized.[/bold green]")
+    else:
+        table = Table(title=f"Reorganized Tracks ({len(moved)} moved)", show_header=True, header_style="bold cyan")
+        table.add_column("Original Location", style="dim")
+        table.add_column("New Organized Location", style="green")
+        for old_p, new_p in moved:
+            table.add_row(str(old_p), str(new_p))
+        console.print(table)
+
+
 @app.command(name="config")
 def config_cmd():
     """Show current Apolo configuration."""
@@ -140,9 +173,13 @@ def config_cmd():
   - Temp Dir:     {config.directories.temp_dir}
 
 [bold cyan]Organization:[/bold cyan]
-  - Path Template:   {config.organization.path_template}
-  - Save .lrc file:  {config.organization.save_lrc_file}
-  - Embed Cover Art: {config.organization.embed_cover_art} (Max: {config.organization.max_cover_size}px)
+  - Path Template:     {config.organization.path_template}
+  - Multi-Disc Folder: {config.organization.multi_disc_folder}
+  - Various Artists:   {config.organization.various_artists_folder}
+  - Group Singles:     {config.organization.group_singles}
+  - Collision Strategy: {config.organization.collision_strategy}
+  - Save .lrc file:    {config.organization.save_lrc_file}
+  - Embed Cover Art:   {config.organization.embed_cover_art} (Max: {config.organization.max_cover_size}px)
 
 [bold cyan]Downloader:[/bold cyan]
   - Codec:   {config.downloader.audio_format}

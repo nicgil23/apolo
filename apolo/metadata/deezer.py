@@ -6,6 +6,7 @@ from apolo.metadata.models import TrackMetadata
 
 class DeezerProvider:
     SEARCH_URL = "https://api.deezer.com/search"
+    TRACK_URL = "https://api.deezer.com/track"
     ALBUM_URL = "https://api.deezer.com/album"
 
     def __init__(self, timeout: int = 10):
@@ -28,6 +29,7 @@ class DeezerProvider:
                 if not title or not artist:
                     continue
 
+                track_id = item.get("id")
                 album_obj = item.get("album", {})
                 album_title = album_obj.get("title")
                 album_id = album_obj.get("id")
@@ -35,30 +37,34 @@ class DeezerProvider:
                 cover_url = album_obj.get("cover_xl") or album_obj.get("cover_big") or album_obj.get("cover_medium")
                 duration = float(item.get("duration", 0)) or None
 
-                # Fetch extra album details (genres, release date, track total) if album_id exists
                 release_date = None
                 genre = None
                 track_total = None
-                track_position = None
-                disk_number = None
+                track_position = item.get("track_position")
+                disk_number = item.get("disk_number")
 
-                if album_id:
+                # Fetch extra track & album details
+                if track_id:
+                    try:
+                        trk_resp = requests.get(f"{self.TRACK_URL}/{track_id}", timeout=self.timeout)
+                        if trk_resp.status_code == 200:
+                            trk_data = trk_resp.json()
+                            track_position = trk_data.get("track_position") or track_position
+                            disk_number = trk_data.get("disk_number") or disk_number
+                            release_date = trk_data.get("release_date")
+                    except Exception:
+                        pass
+
+                if album_id and not release_date:
                     try:
                         alb_resp = requests.get(f"{self.ALBUM_URL}/{album_id}", timeout=self.timeout)
                         if alb_resp.status_code == 200:
                             alb_data = alb_resp.json()
-                            release_date = alb_data.get("release_date")
+                            release_date = alb_data.get("release_date") or release_date
                             track_total = alb_data.get("nb_tracks")
                             genres_data = alb_data.get("genres", {}).get("data", [])
                             if genres_data:
                                 genre = genres_data[0].get("name")
-
-                            # Find track position and disk number in album track list
-                            for trk in alb_data.get("tracks", {}).get("data", []):
-                                if trk.get("id") == item.get("id"):
-                                    track_position = trk.get("track_position")
-                                    disk_number = trk.get("disk_number")
-                                    break
                     except Exception:
                         pass
 
@@ -77,7 +83,7 @@ class DeezerProvider:
                     cover_art_url=cover_url,
                     duration=duration,
                     provider_source="deezer",
-                    source_id=str(item.get("id", "")),
+                    source_id=str(track_id or ""),
                 )
                 results.append(track_meta)
 

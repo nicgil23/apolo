@@ -17,7 +17,7 @@ class MetadataMatcher:
         self.deezer = DeezerProvider()
         self.musicbrainz = MusicBrainzProvider()
 
-    def search_all(self, query: str, limit_per_provider: int = 5) -> List[TrackMetadata]:
+    def search_all(self, query: str, limit_per_provider: int = 10) -> List[TrackMetadata]:
         results: List[TrackMetadata] = []
         seen_ids: Set[str] = set()
 
@@ -44,21 +44,27 @@ class MetadataMatcher:
         query: str,
         expected_title: Optional[str] = None,
         expected_artist: Optional[str] = None,
+        expected_album: Optional[str] = None,
         expected_duration: Optional[float] = None,
     ) -> Optional[TrackMetadata]:
-        # Formulate search queries
         clean_title = normalize_search_string(expected_title or query)
-        clean_artist = normalize_search_string(expected_artist or "")
-        primary_artist = normalize_search_string(extract_primary_artist(expected_artist) or "")
+        raw_artist = expected_artist or ""
+        primary_artist = extract_primary_artist(raw_artist) or raw_artist
+        clean_primary = normalize_search_string(primary_artist)
+        clean_artist = normalize_search_string(raw_artist)
+        clean_album = normalize_search_string(expected_album or "")
 
-        queries = []
-        if clean_artist and clean_title:
+        queries: List[str] = []
+        # 1. Primary artist + Title (Highest priority for multi-artist collaborations)
+        if clean_primary and clean_title:
+            queries.append(f"{clean_primary} {clean_title}")
+        # 2. Primary artist + Album + Title
+        if clean_primary and clean_album and clean_title and clean_album.lower() not in ["single", "unknown"]:
+            queries.append(f"{clean_primary} {clean_album} {clean_title}")
+        # 3. Full artist string + Title
+        if clean_artist and clean_title and clean_artist != clean_primary:
             queries.append(f"{clean_artist} {clean_title}")
-            if primary_artist and primary_artist != clean_artist:
-                queries.append(f"{primary_artist} {clean_title}")
-        elif query:
-            queries.append(normalize_search_string(query))
-
+        # 4. Standalone Title
         if clean_title and clean_title not in queries:
             queries.append(clean_title)
 
@@ -66,21 +72,21 @@ class MetadataMatcher:
         for q in queries:
             if not q.strip():
                 continue
-            candidates.extend(self.search_all(q))
-            # If we already have candidates from specific queries, we can stop searching more generic ones
-            if len(candidates) >= 5:
+            found = self.search_all(q)
+            candidates.extend(found)
+            if len(candidates) >= 15:
                 break
 
         if not candidates:
             return None
 
-        # Score and filter candidates strictly
+        # Score candidates strictly
         scored_candidates: List[tuple[float, TrackMetadata]] = []
         for cand in candidates:
             score = self._compute_similarity_score(
-                cand, clean_title, clean_artist, primary_artist, expected_duration
+                cand, clean_title, clean_artist, clean_primary, expected_duration
             )
-            if score >= 65.0:
+            if score >= 60.0:
                 scored_candidates.append((score, cand))
 
         if not scored_candidates:
@@ -110,10 +116,10 @@ class MetadataMatcher:
         if clean_title:
             title_ratio = fuzz.ratio(clean_title.lower(), cand_title.lower())
             title_partial = fuzz.partial_ratio(clean_title.lower(), cand_title.lower())
-            best_title_score = max(title_ratio, title_partial)
+            title_token = fuzz.token_sort_ratio(clean_title.lower(), cand_title.lower())
+            best_title_score = max(title_ratio, title_partial, title_token)
 
-            # If title does not match well, reject completely to avoid false positive matches
-            if title_ratio < 50 and title_partial < 75:
+            if title_ratio < 45 and title_partial < 70 and title_token < 60:
                 return 0.0
         else:
             best_title_score = 70.0
@@ -121,22 +127,22 @@ class MetadataMatcher:
         # 2. Artist Similarity Check
         if clean_artist or primary_artist:
             artist_scores = []
-            if clean_artist:
-                artist_scores.append(fuzz.token_set_ratio(clean_artist.lower(), cand_artist.lower()))
-                artist_scores.append(fuzz.ratio(clean_artist.lower(), cand_artist.lower()))
             if primary_artist:
-                artist_scores.append(fuzz.token_set_ratio(primary_artist.lower(), cand_artist.lower()))
                 artist_scores.append(fuzz.ratio(primary_artist.lower(), cand_artist.lower()))
+                artist_scores.append(fuzz.token_set_ratio(primary_artist.lower(), cand_artist.lower()))
+            if clean_artist:
+                artist_scores.append(fuzz.ratio(clean_artist.lower(), cand_artist.lower()))
+                artist_scores.append(fuzz.token_set_ratio(clean_artist.lower(), cand_artist.lower()))
 
             best_artist_score = max(artist_scores) if artist_scores else 0.0
 
-            # If we know the artist and the candidate artist has almost zero correlation, reject
+            # If we know the artist and candidate has no correlation, reject
             if best_artist_score < 40:
                 return 0.0
         else:
             best_artist_score = 70.0
 
-        score = (best_title_score * 0.6) + (best_artist_score * 0.4)
+        score = (best_title_score * 0.55) + (best_artist_score * 0.45)
 
         # 3. Duration Bonus/Penalty
         if expected_duration and meta.duration:

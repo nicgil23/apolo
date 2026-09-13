@@ -18,6 +18,10 @@ class OrganizationConfig:
     save_lrc_file: bool = True
     embed_cover_art: bool = True
     max_cover_size: int = 1400
+    multi_disc_folder: bool = True
+    various_artists_folder: bool = True
+    group_singles: bool = True
+    collision_strategy: str = "skip"  # Options: "skip", "rename", "overwrite"
 
 
 @dataclass
@@ -65,7 +69,7 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
     prov_data = data.get("providers", {})
 
     directories = DirectoriesConfig(
-        library_dir=Path(os.path.expanduser(dirs_data.get("library_dir", "~/Music"))),
+        library_dir=Path(os.path.expanduser(dirs_data.get("library_dir", "~/Music/Apolo"))),
         inbox_dir=Path(os.path.expanduser(dirs_data.get("inbox_dir", "~/Music/Inbox"))),
         temp_dir=Path(os.path.expanduser(dirs_data.get("temp_dir", "~/.cache/apolo/temp"))),
     )
@@ -75,6 +79,10 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
         save_lrc_file=org_data.get("save_lrc_file", True),
         embed_cover_art=org_data.get("embed_cover_art", True),
         max_cover_size=org_data.get("max_cover_size", 1400),
+        multi_disc_folder=org_data.get("multi_disc_folder", True),
+        various_artists_folder=org_data.get("various_artists_folder", True),
+        group_singles=org_data.get("group_singles", True),
+        collision_strategy=org_data.get("collision_strategy", "skip"),
     )
 
     downloader = DownloaderConfig(

@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from typing import Optional, Tuple
 
 
 def normalize_search_string(text: str) -> str:
@@ -14,8 +15,11 @@ def normalize_search_string(text: str) -> str:
     return cleaned.strip()
 
 
-def sanitize_filename(name: str, replace_char: str = "_") -> str:
-    """Sanitize a string to be safely used as a filename or directory name."""
+def sanitize_filename(name: str, replace_char: str = "_", max_chars: int = 180) -> str:
+    """
+    Sanitize a string to be safely used as a filename or directory name,
+    ensuring it does not exceed OS filesystem byte/length limits.
+    """
     if not name:
         return "Unknown"
     # Replace illegal characters
@@ -26,10 +30,20 @@ def sanitize_filename(name: str, replace_char: str = "_") -> str:
     cleaned = re.sub(r"\s+", " ", cleaned)
     cleaned = re.sub(r"_+", "_", cleaned)
     cleaned = cleaned.strip(". _")
+
+    if not cleaned:
+        return "Unknown"
+
+    # Truncate if exceeds max_chars safely
+    if len(cleaned.encode("utf-8")) > max_chars:
+        while len(cleaned.encode("utf-8")) > max_chars:
+            cleaned = cleaned[:-1]
+        cleaned = cleaned.strip(". _")
+
     return cleaned or "Unknown"
 
 
-def clean_track_title(raw_title: str) -> tuple[str, str | None]:
+def clean_track_title(raw_title: str) -> Tuple[str, Optional[str]]:
     """
     Attempt to extract (title, artist) or cleaned title from video titles like:
     - 'Artist - Song Title (Official Music Video)' -> ('Song Title', 'Artist')
@@ -59,12 +73,55 @@ def extract_primary_artist(artist_str: Optional[str]) -> Optional[str]:
     """Extract first main artist before commas, feat, ft., vs, x."""
     if not artist_str:
         return None
-    # Split by separators
     split_pattern = r"(?:,\s*|\s+(?:feat\.?|ft\.?|x|vs\.?|&)\s+)"
     parts = re.split(split_pattern, artist_str, flags=re.IGNORECASE)
     if parts:
         return parts[0].strip()
     return artist_str.strip()
+
+
+def extract_disc_info(text: Optional[str]) -> Tuple[str, Optional[int]]:
+    """
+    Extracts disc number if present in album/title string, e.g.
+    'The Wall (Disc 2)' -> ('The Wall', 2)
+    'Stadium Arcadium [CD 1]' -> ('Stadium Arcadium', 1)
+    'Final Fantasy VII OST (Vol. 3)' -> ('Final Fantasy VII OST', 3)
+    """
+    if not text:
+        return "", None
+
+    pattern = r"\s*[\(\[]\s*(?:disc|cd|vol(?:ume)?|part|pt\.?)\s*(\d+)\s*[\)\]]"
+    match = re.search(pattern, text, flags=re.IGNORECASE)
+    if match:
+        disc_num = int(match.group(1))
+        cleaned_text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+        return cleaned_text or text, disc_num
+
+    return text, None
+
+
+def is_compilation_album(album_title: Optional[str], album_artist: Optional[str]) -> bool:
+    """Determines if the album is a compilation / Various Artists release."""
+    if album_artist:
+        norm_aa = album_artist.strip().lower()
+        if norm_aa in ["various artists", "various", "v.a.", "varios artistas", "soundtrack", "ost"]:
+            return True
+
+    if album_title:
+        norm_title = album_title.strip().lower()
+        if any(keyword in norm_title for keyword in ["original soundtrack", "motion picture soundtrack", "ost", "soundtrack", "various artists"]):
+            return True
+
+    return False
+
+
+def is_single_release(album_title: Optional[str], track_total: Optional[int]) -> bool:
+    """Determines if a release is a single."""
+    if not album_title or album_title.strip().lower() in ["single", "singles", "unknown album"]:
+        return True
+    if track_total is not None and track_total <= 2 and "single" in album_title.lower():
+        return True
+    return False
 
 
 def format_duration(seconds: float | int | None) -> str:
