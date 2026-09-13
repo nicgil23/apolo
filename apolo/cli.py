@@ -15,11 +15,10 @@ from apolo.tagger import AudioTagger
 
 app = typer.Typer(
     name="apolo",
-    help="""[bold cyan]Apolo[/bold cyan] - Modern CLI Music Suite: Lossless/Hi-Fi Audio Transcoder, Streaming Importer, Smart Tagger, Acoustic Fingerprinter & Library Manager.
+    help="""[bold cyan]Apolo[/bold cyan] - Modern CLI Music Suite: Lossless/Hi-Fi Audio Transcoder, Smart Tagger, Acoustic Fingerprinter & Library Manager.
 
 [bold yellow]Key Features & Capabilities:[/bold yellow]
   • [green]Audio Transcoding & Lossless Preservation[/green]: Converts any audio/video to high-quality [bold].opus[/bold] (256k VBR) or preserves pristine bit-perfect [bold].flac[/bold] ([bold]--keep-lossless[/bold]).
-  • [green]Streaming Importer[/green]: Import complete playlists and albums from [bold]Spotify[/bold], [bold]Deezer[/bold], and [bold]Apple Music[/bold] with auto-generated M3U8 playlists ([bold]apolo import[/bold]).
   • [green]Metadata Tagging & Interactive Selection[/green]: Multi-source lookup (Deezer, iTunes, MusicBrainz) with interactive candidate review ([bold]--interactive[/bold] / [bold]-i[/bold]).
   • [green]Acoustic Fingerprinting[/green]: Identify unknown and untagged tracks by waveform using Chromaprint & AcoustID ([bold]apolo identify[/bold]).
   • [green]EBU R128 & ReplayGain[/green]: Loudness normalization tagging ([bold]R128_TRACK_GAIN[/bold] / [bold]REPLAYGAIN_*[/bold]) via FFmpeg ebur128 ([bold]apolo gain[/bold]).
@@ -164,59 +163,6 @@ def download_cmd(
                     display_track_summary(dest_audio, dest_lrc, meta, dry_run=dry_run)
             except Exception as e:
                 console.print(f"[bold red]Error processing {url}:[/bold red] {e}")
-
-
-@app.command(name="import")
-def import_cmd(
-    urls: List[str] = typer.Argument(
-        ...,
-        help="Playlist, album, or track URLs from Spotify, Deezer, or Apple Music",
-    ),
-    no_playlist: bool = typer.Option(
-        False,
-        "--no-playlist",
-        help="Do not generate an .m3u8 playlist file for the imported collection",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-n",
-        help="Simulate tracklist extraction and matching without downloading audio",
-    ),
-):
-    """[bold green]Streaming Importer[/bold green]: Import and download playlists or albums from Spotify, Deezer, and Apple Music into your Opus library."""
-    from apolo.importer import StreamingImporter
-
-    config = load_config()
-    importer = StreamingImporter(config)
-
-    for url in urls:
-        prefix = "[bold yellow][DRY-RUN][/bold yellow] " if dry_run else ""
-        console.print(f"\n{prefix}[bold magenta]Importing from streaming provider:[/bold magenta] {url}")
-
-        with console.status("[bold cyan]Extracting official tracklist and metadata...[/bold cyan]") as status:
-            def update_status(step: str, msg: str):
-                status.update(f"[bold cyan]{msg}[/bold cyan]")
-
-            collection, results, pl_path = importer.import_collection(
-                url=url,
-                create_m3u8=not no_playlist,
-                dry_run=dry_run,
-                on_progress=update_status,
-            )
-
-        if not collection:
-            console.print(f"[bold red]Could not extract playlist/album information from:[/bold red] {url}")
-            continue
-
-        console.print(f"[bold green]Imported collection:[/bold green] [bold yellow]{collection.title}[/bold yellow] by [cyan]{collection.creator}[/cyan] ({len(collection.tracks)} tracks)")
-
-        for dest_audio, dest_lrc, meta in results:
-            display_track_summary(dest_audio, dest_lrc, meta, dry_run=dry_run)
-
-        if pl_path:
-            console.print(f"[bold green]Generated Playlist:[/bold green] [cyan]{pl_path.name}[/cyan] ({pl_path})")
-
 
 @app.command(name="process")
 @app.command(name="tag", hidden=True)

@@ -47,18 +47,6 @@ apolo download "https://www.youtube.com/watch?v=5NV6Rdv1a3I"
 adl "https://soundcloud.com/artist/track"
 ```
 
-### Import from Spotify / Deezer / Apple Music (`apolo import`)
-Download full playlists or albums with official metadata and auto-generated `.m3u8` playlists:
-```bash
-# Import a Spotify playlist
-apolo import "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
-
-# Import a Deezer album
-apolo import "https://www.deezer.com/album/302127"
-
-# Import an Apple Music album or track
-apolo import "https://music.apple.com/us/album/random-access-memories/636988822"
-```
 
 ### Process Local Files or Folders
 ```bash
