@@ -2,11 +2,11 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import yt_dlp
 
 from apolo.config import ApoloConfig, load_config
-from apolo.utils import clean_track_title, extract_primary_artist
+from apolo.utils import clean_media_url, clean_track_title, extract_primary_artist
 
 
 @dataclass
@@ -30,11 +30,36 @@ class AudioDownloader:
         self.temp_dir = self.config.directories.temp_dir
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
-    def download_url(self, url: str, origin: Optional[str] = None) -> List[DownloadedTrackInfo]:
+    def download_url(
+        self,
+        url: str,
+        origin: Optional[str] = None,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> List[DownloadedTrackInfo]:
         """
         Downloads URL using yt-dlp to best quality .opus audio.
         Returns a list of DownloadedTrackInfo objects containing rich source metadata.
         """
+        clean_url = clean_media_url(url)
+        is_explicit_playlist = "/playlist" in clean_url and "list=" in clean_url
+
+        def yt_progress_hook(d: dict) -> None:
+            if cancel_check and cancel_check():
+                raise RuntimeError("Download cancelled by user")
+
+            if d.get("status") == "downloading" and progress_callback:
+                downloaded = d.get("downloaded_bytes", 0)
+                total = d.get("total_bytes") or d.get("total_bytes_estimate")
+                percent_str = (d.get("_percent_str") or "").strip()
+                if total and total > 0:
+                    pct = round((downloaded / total) * 100.0, 1)
+                    progress_callback(pct, f"{pct}%")
+                elif percent_str:
+                    clean_pct = re.sub(r"[^\d.]", "", percent_str)
+                    val = float(clean_pct) if clean_pct else 50.0
+                    progress_callback(val, percent_str)
+
         ydl_opts: Dict[str, Any] = {
             "format": "bestaudio/best",
             "postprocessors": [
@@ -48,11 +73,14 @@ class AudioDownloader:
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
+            "noplaylist": not is_explicit_playlist,
+            "sleep_interval_requests": 1.0,
+            "progress_hooks": [yt_progress_hook],
         }
 
         results: List[DownloadedTrackInfo] = []
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            info = ydl.extract_info(clean_url, download=True)
             if not info:
                 return []
 

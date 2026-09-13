@@ -146,3 +146,42 @@ def format_duration(seconds: float | int | None) -> str:
     mins = total_seconds // 60
     secs = total_seconds % 60
     return f"{mins:02d}:{secs:02d}"
+
+
+def clean_media_url(url: str) -> str:
+    """
+    Cleans tracking, radio lists (list=RD...), and noise parameters from URLs.
+    If a URL points to a specific video (e.g. watch?v=... or youtu.be/...),
+    it strips radio/mix playlist parameters to avoid downloading infinite radio queues.
+    """
+    if not url:
+        return ""
+
+    from urllib.parse import parse_qs, urlparse, urlunparse
+
+    parsed = urlparse(url.strip())
+    netloc = parsed.netloc.lower()
+
+    # YouTube / YouTube Music
+    if "youtube.com" in netloc or "youtu.be" in netloc:
+        query_params = parse_qs(parsed.query)
+
+        # If it's a watch URL or has a 'v' parameter
+        if "v" in query_params:
+            video_id = query_params["v"][0]
+            clean_query = f"v={video_id}"
+            scheme = parsed.scheme or "https"
+            return urlunparse((scheme, parsed.netloc, parsed.path, "", clean_query, ""))
+
+        # If it's youtu.be/VIDEO_ID
+        if "youtu.be" in netloc and parsed.path.strip("/"):
+            video_id = parsed.path.strip("/").split("/")[0]
+            return f"https://youtu.be/{video_id}"
+
+        # If it's an explicit playlist page: /playlist?list=...
+        if "/playlist" in parsed.path and "list" in query_params:
+            list_id = query_params["list"][0]
+            scheme = parsed.scheme or "https"
+            return urlunparse((scheme, parsed.netloc, "/playlist", "", f"list={list_id}", ""))
+
+    return url.strip()

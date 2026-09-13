@@ -68,3 +68,9 @@ venv.bak/
 *.aac
 *.ogg
 /temp/
+
+# Browser extensions & packaging keys
+*.crx
+*.pem
+*.xpi
+*.zip

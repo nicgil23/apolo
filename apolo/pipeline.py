@@ -93,6 +93,8 @@ class ProcessingPipeline:
         dry_run: bool = False,
         candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
         """
         Downloads URL, matches metadata, gets synced lyrics, tags, and organizes to library.
@@ -101,7 +103,12 @@ class ProcessingPipeline:
         if on_progress:
             on_progress("downloading", f"Downloading audio from {url}...")
 
-        downloaded_items = self.downloader.download_url(url, origin=origin)
+        downloaded_items = self.downloader.download_url(
+            url,
+            origin=origin,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+        )
         results = []
 
         for item in downloaded_items:
