@@ -98,7 +98,7 @@ class CoverManager:
         updated_count = 0
 
         for f in target_files:
-            if f.suffix.lower() == ".opus":
+            if f.suffix.lower() in [".opus", ".flac"]:
                 AudioTagger.update_tags(f, {}, cover_data=cover_data)
                 updated_count += 1
 

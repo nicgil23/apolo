@@ -723,9 +723,11 @@ def doctor_cmd(
     missing_covers_only: bool = typer.Option(False, "--missing-covers", help="Display tracks missing high-res covers only"),
     repair_lyrics: bool = typer.Option(False, "--repair-lyrics", help="Automatically fetch and embed missing synced lyrics from LRCLIB"),
     repair_covers: bool = typer.Option(False, "--repair-covers", help="Automatically fetch and embed missing high-res covers"),
+    repair_fragmented: bool = typer.Option(False, "--repair-fragmented", help="Automatically unify fragmented collaborative artist folders"),
+    repair_all: bool = typer.Option(False, "--repair", "--repair-all", help="Run all repairs (lyrics, covers, fragmented folders)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview repairs without modifying files on disk"),
 ):
-    """[bold green]Library Health & Diagnostics[/bold green]: Audit duplicates, incomplete albums, missing lyrics, and low-res covers with automated batch repairs."""
+    """[bold green]Library Health & Diagnostics[/bold green]: Audit duplicates, incomplete albums, missing lyrics, low-res covers, and fragmented artist folders with automated batch repairs."""
     from apolo.doctor import LibraryDoctor
 
     config = load_config()
@@ -744,7 +746,23 @@ def doctor_cmd(
         return
 
     # Handle batch repairs
-    if repair_lyrics:
+    do_lyrics = repair_lyrics or repair_all
+    do_covers = repair_covers or repair_all
+    do_fragmented = repair_fragmented or repair_all
+
+    if do_fragmented:
+        if not report.fragmented_artist_folders:
+            console.print("[bold green]No fragmented artist folders found. No repair needed.[/bold green]")
+        elif dry_run:
+            console.print(f"[bold yellow][DRY-RUN] Would unify {len(report.fragmented_artist_folders)} fragmented artist folders into primary artist directories.[/bold yellow]")
+        else:
+            with console.status("[bold cyan]Unifying fragmented artist folders...[/bold cyan]") as status:
+                def update_status(step: str, msg: str):
+                    status.update(f"[bold cyan]{msg}[/bold cyan]")
+                repaired = doctor.repair_fragmented_folders(report.fragmented_artist_folders, on_progress=update_status)
+            console.print(f"[bold green]Unified {repaired} / {len(report.fragmented_artist_folders)} fragmented artist folders.[/bold green]")
+
+    if do_lyrics:
         if not report.missing_lyrics:
             console.print("[bold green]All tracks already have lyrics. No repair needed.[/bold green]")
         elif dry_run:
@@ -756,7 +774,7 @@ def doctor_cmd(
                 repaired = doctor.repair_lyrics(report.missing_lyrics, on_progress=update_status)
             console.print(f"[bold green]Repaired lyrics for {repaired} / {len(report.missing_lyrics)} tracks.[/bold green]")
 
-    if repair_covers:
+    if do_covers:
         tracks_to_cover = [p for p, _ in report.missing_or_lowres_covers]
         if not tracks_to_cover:
             console.print("[bold green]All tracks have high-res cover art. No repair needed.[/bold green]")
@@ -769,7 +787,7 @@ def doctor_cmd(
                 repaired = doctor.repair_covers(tracks_to_cover, on_progress=update_status)
             console.print(f"[bold green]Embedded high-res covers for {repaired} / {len(tracks_to_cover)} tracks.[/bold green]")
 
-    if repair_lyrics or repair_covers:
+    if do_lyrics or do_covers or do_fragmented:
         return
 
     # Filter views if specific flags requested
@@ -787,14 +805,24 @@ def doctor_cmd(
 [bold cyan]Lyrics Coverage:[/bold cyan]   [{lyrics_color} bold]{report.lyrics_coverage}%[/{lyrics_color} bold] ({lyrics_count}/{report.total_tracks} tracks)
 
 [bold yellow]Issues Found:[/bold yellow]
-  • Duplicate Groups:      {len(report.duplicates)}
-  • Incomplete Albums:     {len(report.incomplete_albums)}
-  • Missing Synced Lyrics: {len(report.missing_lyrics)}
-  • Missing/Low-Res Covers:{len(report.missing_or_lowres_covers)}
-  • Missing Essential Tags:{len(report.missing_essential_tags)}"""
+  • Duplicate Groups:        {len(report.duplicates)}
+  • Incomplete Albums:       {len(report.incomplete_albums)}
+  • Fragmented Artist Dirs:  {len(report.fragmented_artist_folders)}
+  • Missing Synced Lyrics:   {len(report.missing_lyrics)}
+  • Missing/Low-Res Covers:  {len(report.missing_or_lowres_covers)}
+  • Missing Essential Tags:  {len(report.missing_essential_tags)}"""
         console.print(Panel(summary_panel, title="Apolo Library Health Report", border_style=score_color))
 
-    # 2. Duplicates Table
+    # 2. Fragmented Folders Table
+    if show_all and report.fragmented_artist_folders:
+        frag_table = Table(title=f"Fragmented Artist Folders ({len(report.fragmented_artist_folders)} folders)", show_header=True, header_style="bold yellow")
+        frag_table.add_column("Fragmented Folder", style="bold yellow")
+        frag_table.add_column("Target Primary Artist", style="green")
+        for folder, _, prim_name in report.fragmented_artist_folders:
+            frag_table.add_row(folder.name, prim_name)
+        console.print(frag_table)
+
+    # 3. Duplicates Table
     if (show_all or duplicates_only) and report.duplicates:
         dup_table = Table(title=f"Duplicate Tracks ({len(report.duplicates)} groups)", show_header=True, header_style="bold yellow")
         dup_table.add_column("Artist - Title", style="bold yellow")
@@ -805,7 +833,7 @@ def doctor_cmd(
             dup_table.add_row(f"{dup.artist} - {dup.title}", dup.match_type, paths_str)
         console.print(dup_table)
 
-    # 3. Incomplete Albums Table
+    # 4. Incomplete Albums Table
     if (show_all or missing_tracks_only) and report.incomplete_albums:
         alb_table = Table(title=f"Incomplete Albums ({len(report.incomplete_albums)} albums)", show_header=True, header_style="bold red")
         alb_table.add_column("Album Artist & Title", style="bold yellow")
@@ -818,7 +846,7 @@ def doctor_cmd(
             alb_table.add_row(f"{alb.album_artist} - {alb.album_title}", str(alb.track_total), pres_str, miss_str)
         console.print(alb_table)
 
-    # 4. Missing Lyrics
+    # 5. Missing Lyrics
     if (show_all or missing_lyrics_only) and report.missing_lyrics:
         lyr_table = Table(title=f"Tracks Missing Synced Lyrics ({len(report.missing_lyrics)} tracks)", show_header=True, header_style="bold cyan")
         lyr_table.add_column("File Path", style="cyan")
@@ -828,7 +856,7 @@ def doctor_cmd(
             lyr_table.add_row(f"[dim]... and {len(report.missing_lyrics) - 15} more (use --repair-lyrics to fetch)[/dim]")
         console.print(lyr_table)
 
-    # 5. Missing / Low-Res Covers
+    # 6. Missing / Low-Res Covers
     if (show_all or missing_covers_only) and report.missing_or_lowres_covers:
         cov_table = Table(title=f"Cover Art Issues ({len(report.missing_or_lowres_covers)} tracks)", show_header=True, header_style="bold magenta")
         cov_table.add_column("File Path", style="magenta")

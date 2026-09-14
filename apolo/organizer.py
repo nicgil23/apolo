@@ -31,6 +31,33 @@ class LibraryOrganizer:
             pass
         return parent_dir / target_name
 
+    def _resolve_album_dir(self, parent_dir: Path, album_clean: str, date_str: str) -> Path:
+        """Finds existing album directory matching album_clean case-insensitively with or without year, or returns standard."""
+        if not parent_dir.exists():
+            album_folder = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
+            return parent_dir / album_folder
+
+        target_with_date = (f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean).lower()
+        target_without_date = album_clean.lower()
+
+        try:
+            for entry in parent_dir.iterdir():
+                if entry.is_dir() and entry.name.lower() == target_with_date:
+                    return entry
+            if not date_str or date_str == "Unknown Year":
+                for entry in parent_dir.iterdir():
+                    if entry.is_dir() and (entry.name.lower() == target_without_date or entry.name.lower().startswith(f"{target_without_date} (")):
+                        return entry
+            else:
+                for entry in parent_dir.iterdir():
+                    if entry.is_dir() and entry.name.lower() == target_without_date:
+                        return entry
+        except Exception:
+            pass
+
+        album_folder = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
+        return parent_dir / album_folder
+
     def get_destination_path(self, metadata: TrackMetadata, extension: str = ".opus") -> Path:
         if not extension.startswith("."):
             extension = f".{extension}"
@@ -50,12 +77,11 @@ class LibraryOrganizer:
         artist_dir = self._resolve_case_insensitive_dir(self.library_dir, artist_clean)
 
         # 1. Compilation / Various Artists check
-        is_compilation = bool(metadata.compilation) or is_compilation_album(raw_album, metadata.album_artist)
+        effective_album_artist = metadata.album_artist or metadata.get_album_artist_or_artist()
+        is_compilation = bool(metadata.compilation) or is_compilation_album(raw_album, effective_album_artist)
         if is_compilation and self.config.organization.various_artists_folder:
             folder_artist = self._resolve_case_insensitive_dir(self.library_dir, "Various Artists")
-            album_folder = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
-            resolved_album_dir = self._resolve_case_insensitive_dir(folder_artist, album_folder)
-            file_name = f"{track_num:02d} - {track_artist_clean} - {title_clean}{extension}"
+            resolved_album_dir = self._resolve_album_dir(folder_artist, album_clean, date_str)
 
             has_existing_multi_disc = False
             if resolved_album_dir.exists():
@@ -74,24 +100,40 @@ class LibraryOrganizer:
                 or has_existing_multi_disc
             )
 
-            if is_multi_disc and self.config.organization.multi_disc_folder:
-                dest_dir = self._resolve_case_insensitive_dir(resolved_album_dir, f"Disc {disc_num:02d}")
+            if is_multi_disc:
+                if self.config.organization.multi_disc_folder:
+                    dest_dir = self._resolve_case_insensitive_dir(resolved_album_dir, f"Disc {disc_num:02d}")
+                    file_name = f"{track_num:02d} - {track_artist_clean} - {title_clean}{extension}"
+                else:
+                    dest_dir = resolved_album_dir
+                    file_name = f"{disc_num}-{track_num:02d} - {track_artist_clean} - {title_clean}{extension}"
             else:
                 dest_dir = resolved_album_dir
+                file_name = f"{track_num:02d} - {track_artist_clean} - {title_clean}{extension}"
             return dest_dir / file_name
 
         # 2. Standalone Single check
         if self.config.organization.group_singles and is_single_release(raw_album, metadata.track_total):
-            dest_dir = self._resolve_case_insensitive_dir(artist_dir, "Singles")
-            if date_str and date_str != "Unknown Year":
-                file_name = f"{title_clean} ({date_str}){extension}"
+            from apolo.utils import extract_primary_artist
+            primary_artist = sanitize_filename(
+                metadata.main_artists[0] if metadata.main_artists else (extract_primary_artist(metadata.artist) or artist_clean)
+            )
+            single_artist_dir = self._resolve_case_insensitive_dir(self.library_dir, primary_artist)
+            dest_dir = self._resolve_case_insensitive_dir(single_artist_dir, "Singles")
+            if metadata.track_total and metadata.track_total > 1 and track_num is not None:
+                if date_str and date_str != "Unknown Year":
+                    file_name = f"{track_num:02d} - {title_clean} ({date_str}){extension}"
+                else:
+                    file_name = f"{track_num:02d} - {title_clean}{extension}"
             else:
-                file_name = f"{title_clean}{extension}"
+                if date_str and date_str != "Unknown Year":
+                    file_name = f"{title_clean} ({date_str}){extension}"
+                else:
+                    file_name = f"{title_clean}{extension}"
             return dest_dir / file_name
 
         # 3. Studio / Multi-Track Album
-        album_folder = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
-        resolved_album_dir = self._resolve_case_insensitive_dir(artist_dir, album_folder)
+        resolved_album_dir = self._resolve_album_dir(artist_dir, album_clean, date_str)
 
         has_existing_multi_disc = False
         if resolved_album_dir.exists():
@@ -140,9 +182,8 @@ class LibraryOrganizer:
             if dest_audio.resolve() == source_audio.resolve():
                 pass
             elif self.config.organization.collision_strategy == "skip":
-                # Check if identical in size
-                if source_audio.exists() and dest_audio.stat().st_size == source_audio.stat().st_size:
-                    source_audio.unlink()
+                # Safe skip: do not delete or overwrite source file
+                pass
             elif self.config.organization.collision_strategy == "rename":
                 counter = 1
                 base_stem = dest_audio.stem

@@ -10,6 +10,12 @@ from PIL import Image
 from apolo.metadata.models import TrackMetadata
 
 
+def _is_valid_vorbis_key(key: str) -> bool:
+    if not key or not isinstance(key, str):
+        return False
+    return all(0x20 <= ord(c) <= 0x7D and c != "=" for c in key)
+
+
 class AudioTagger:
     @staticmethod
     def extract_cover_art_from_file(file_path: Path) -> Optional[bytes]:
@@ -81,10 +87,24 @@ class AudioTagger:
         # Clear or set standard Vorbis comment fields
         if metadata.title:
             audio["TITLE"] = [metadata.title]
-        if metadata.artist:
+        if metadata.artists:
+            audio["ARTIST"] = [str(a) for a in metadata.artists]
+        elif metadata.artist:
             audio["ARTIST"] = [metadata.artist]
-        if metadata.album_artist or metadata.artist:
-            audio["ALBUMARTIST"] = [metadata.album_artist or metadata.artist]
+
+        album_artist_val = metadata.album_artist or (metadata.main_artists[0] if metadata.main_artists else metadata.artist)
+        if album_artist_val:
+            audio["ALBUMARTIST"] = [str(album_artist_val)]
+
+        if metadata.artists and len(metadata.artists) > 1:
+            audio["ARTISTS"] = ["; ".join(metadata.artists)]
+        if metadata.main_artists:
+            audio["MAIN_ARTIST"] = [str(a) for a in metadata.main_artists]
+            audio["ARTIST_MAIN"] = [str(a) for a in metadata.main_artists]
+        if metadata.featured_artists:
+            audio["FEATURED_ARTIST"] = [str(a) for a in metadata.featured_artists]
+            audio["ARTIST_FEATURED"] = [str(a) for a in metadata.featured_artists]
+
         if metadata.album:
             audio["ALBUM"] = [metadata.album]
         if metadata.track_number is not None:
@@ -108,6 +128,22 @@ class AudioTagger:
             audio["SOURCE"] = [metadata.origin]
             audio["ORIGEN"] = [metadata.origin]
 
+        # Passthrough extra native tags if present and not already written
+        standard_vorbis_keys = {
+            "TITLE", "ARTIST", "ALBUMARTIST", "ARTISTS", "MAIN_ARTIST", "ARTIST_MAIN",
+            "FEATURED_ARTIST", "ARTIST_FEATURED", "ALBUM", "TRACKNUMBER", "TRACKTOTAL",
+            "DATE", "GENRE", "DISCNUMBER", "DISCTOTAL", "COMPILATION", "LYRICS",
+            "ORIGIN", "SOURCE", "ORIGEN", "METADATA_BLOCK_PICTURE"
+        }
+        if metadata.extra_tags:
+            for k, v in metadata.extra_tags.items():
+                k_upper = str(k).upper()
+                if _is_valid_vorbis_key(k_upper) and k_upper not in standard_vorbis_keys:
+                    try:
+                        audio[k_upper] = [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+                    except Exception:
+                        pass
+
         # Embed cover art
         if metadata.cover_art_data:
             try:
@@ -117,7 +153,12 @@ class AudioTagger:
 
                 with Image.open(io.BytesIO(metadata.cover_art_data)) as img:
                     pic.width, pic.height = img.size
-                    pic.depth = 24
+                    if img.mode in ("RGBA", "LA", "PA"):
+                        pic.depth = 32
+                    elif img.mode in ("L", "P", "1"):
+                        pic.depth = 8
+                    else:
+                        pic.depth = 24
                     pic.mime = Image.MIME.get(img.format, "image/jpeg")
 
                 picture_data = pic.write()
@@ -142,10 +183,24 @@ class AudioTagger:
 
         if metadata.title:
             audio["TITLE"] = [metadata.title]
-        if metadata.artist:
+        if metadata.artists:
+            audio["ARTIST"] = [str(a) for a in metadata.artists]
+        elif metadata.artist:
             audio["ARTIST"] = [metadata.artist]
-        if metadata.album_artist or metadata.artist:
-            audio["ALBUMARTIST"] = [metadata.album_artist or metadata.artist]
+
+        album_artist_val = metadata.album_artist or (metadata.main_artists[0] if metadata.main_artists else metadata.artist)
+        if album_artist_val:
+            audio["ALBUMARTIST"] = [str(album_artist_val)]
+
+        if metadata.artists and len(metadata.artists) > 1:
+            audio["ARTISTS"] = ["; ".join(metadata.artists)]
+        if metadata.main_artists:
+            audio["MAIN_ARTIST"] = [str(a) for a in metadata.main_artists]
+            audio["ARTIST_MAIN"] = [str(a) for a in metadata.main_artists]
+        if metadata.featured_artists:
+            audio["FEATURED_ARTIST"] = [str(a) for a in metadata.featured_artists]
+            audio["ARTIST_FEATURED"] = [str(a) for a in metadata.featured_artists]
+
         if metadata.album:
             audio["ALBUM"] = [metadata.album]
         if metadata.track_number is not None:
@@ -169,6 +224,22 @@ class AudioTagger:
             audio["SOURCE"] = [metadata.origin]
             audio["ORIGEN"] = [metadata.origin]
 
+        # Passthrough extra native tags if present and not already written
+        standard_vorbis_keys = {
+            "TITLE", "ARTIST", "ALBUMARTIST", "ARTISTS", "MAIN_ARTIST", "ARTIST_MAIN",
+            "FEATURED_ARTIST", "ARTIST_FEATURED", "ALBUM", "TRACKNUMBER", "TRACKTOTAL",
+            "DATE", "GENRE", "DISCNUMBER", "DISCTOTAL", "COMPILATION", "LYRICS",
+            "ORIGIN", "SOURCE", "ORIGEN"
+        }
+        if metadata.extra_tags:
+            for k, v in metadata.extra_tags.items():
+                k_upper = str(k).upper()
+                if _is_valid_vorbis_key(k_upper) and k_upper not in standard_vorbis_keys:
+                    try:
+                        audio[k_upper] = [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+                    except Exception:
+                        pass
+
         # Embed cover art
         if metadata.cover_art_data:
             try:
@@ -178,7 +249,12 @@ class AudioTagger:
 
                 with Image.open(io.BytesIO(metadata.cover_art_data)) as img:
                     pic.width, pic.height = img.size
-                    pic.depth = 24
+                    if img.mode in ("RGBA", "LA", "PA"):
+                        pic.depth = 32
+                    elif img.mode in ("L", "P", "1"):
+                        pic.depth = 8
+                    else:
+                        pic.depth = 24
                     pic.mime = Image.MIME.get(img.format, "image/jpeg")
 
                 audio.clear_pictures()
@@ -204,7 +280,7 @@ class AudioTagger:
         cover_data: Optional[bytes] = None,
     ) -> None:
         """
-        Updates specific Vorbis tags and/or cover art on an .opus file without wiping unmentioned tags.
+        Updates specific Vorbis tags and/or cover art on an .opus or .flac file without wiping unmentioned tags.
         Supported keys in updates:
           - title, artist, album_artist, album, track_number, track_total,
             date, genre, disc_number, disc_total, compilation, lyrics, origin
@@ -212,17 +288,47 @@ class AudioTagger:
         if not file_path.exists():
             return
 
-        try:
-            audio = OggOpus(file_path)
-        except Exception:
-            audio = OggOpus(file_path)
-            if audio.tags is None:
-                audio.add_tags()
+        is_flac = file_path.suffix.lower() == ".flac"
+        if is_flac:
+            from mutagen.flac import FLAC
+            try:
+                audio = FLAC(file_path)
+            except Exception:
+                return
+        else:
+            try:
+                audio = OggOpus(file_path)
+            except Exception:
+                audio = OggOpus(file_path)
+                if audio.tags is None:
+                    audio.add_tags()
 
         if "title" in updates and updates["title"] is not None:
             audio["TITLE"] = [str(updates["title"])]
-        if "artist" in updates and updates["artist"] is not None:
-            audio["ARTIST"] = [str(updates["artist"])]
+        if "artists" in updates and updates["artists"] is not None:
+            audio["ARTIST"] = [str(a) for a in updates["artists"]]
+            if len(updates["artists"]) > 1:
+                audio["ARTISTS"] = ["; ".join(updates["artists"])]
+        elif "artist" in updates and updates["artist"] is not None:
+            from apolo.utils import parse_artists
+            m, f, a, _ = parse_artists(str(updates["artist"]))
+            audio["ARTIST"] = [str(x) for x in a] if a else [str(updates["artist"])]
+            if len(a) > 1:
+                audio["ARTISTS"] = ["; ".join(a)]
+            if m:
+                audio["MAIN_ARTIST"] = [str(x) for x in m]
+                audio["ARTIST_MAIN"] = [str(x) for x in m]
+            if f:
+                audio["FEATURED_ARTIST"] = [str(x) for x in f]
+                audio["ARTIST_FEATURED"] = [str(x) for x in f]
+
+        if "main_artists" in updates and updates["main_artists"] is not None:
+            audio["MAIN_ARTIST"] = [str(x) for x in updates["main_artists"]]
+            audio["ARTIST_MAIN"] = [str(x) for x in updates["main_artists"]]
+        if "featured_artists" in updates and updates["featured_artists"] is not None:
+            audio["FEATURED_ARTIST"] = [str(x) for x in updates["featured_artists"]]
+            audio["ARTIST_FEATURED"] = [str(x) for x in updates["featured_artists"]]
+
         if "album_artist" in updates and updates["album_artist"] is not None:
             audio["ALBUMARTIST"] = [str(updates["album_artist"])]
         if "album" in updates and updates["album"] is not None:
@@ -256,12 +362,21 @@ class AudioTagger:
 
                 with Image.open(io.BytesIO(cover_data)) as img:
                     pic.width, pic.height = img.size
-                    pic.depth = 24
+                    if img.mode in ("RGBA", "LA", "PA"):
+                        pic.depth = 32
+                    elif img.mode in ("L", "P", "1"):
+                        pic.depth = 8
+                    else:
+                        pic.depth = 24
                     pic.mime = Image.MIME.get(img.format, "image/jpeg")
 
-                picture_data = pic.write()
-                encoded_data = base64.b64encode(picture_data).decode("ascii")
-                audio["METADATA_BLOCK_PICTURE"] = [encoded_data]
+                if is_flac:
+                    audio.clear_pictures()
+                    audio.add_picture(pic)
+                else:
+                    picture_data = pic.write()
+                    encoded_data = base64.b64encode(picture_data).decode("ascii")
+                    audio["METADATA_BLOCK_PICTURE"] = [encoded_data]
             except Exception:
                 pass
 

@@ -46,6 +46,29 @@ def get_first_tag(tags: Any, keys: list[str]) -> Optional[str]:
     return None
 
 
+def get_all_tags(tags: Any, keys: list[str]) -> list[str]:
+    if not tags:
+        return []
+    results: list[str] = []
+    for k in keys:
+        for variant in [k, k.upper(), k.lower()]:
+            try:
+                if variant in tags:
+                    val = tags[variant]
+                    if isinstance(val, (list, tuple)):
+                        for item in val:
+                            s = str(item).strip()
+                            if s and s not in results:
+                                results.append(s)
+                    else:
+                        s = str(val).strip()
+                        if s and s not in results:
+                            results.append(s)
+            except Exception:
+                pass
+    return results
+
+
 def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     if console is None:
         console = Console()
@@ -91,7 +114,8 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
 
     # Metadata fields
     title = get_first_tag(tags, ["TITLE", "title", "TIT2"]) or "-"
-    artist = get_first_tag(tags, ["ARTIST", "artist", "TPE1"]) or "-"
+    artist_tag_list = get_all_tags(tags, ["ARTIST", "artist", "TPE1"])
+    artist = ", ".join(artist_tag_list) if artist_tag_list else (get_first_tag(tags, ["ARTIST", "artist", "TPE1"]) or "-")
     album_artist = get_first_tag(tags, ["ALBUMARTIST", "albumartist", "TPE2"]) or "-"
     album = get_first_tag(tags, ["ALBUM", "album", "TALB"]) or "-"
     track_num = get_first_tag(tags, ["TRACKNUMBER", "tracknumber", "TRCK"]) or "-"
@@ -102,6 +126,24 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     genre = get_first_tag(tags, ["GENRE", "genre", "TCON"]) or "-"
     compilation = get_first_tag(tags, ["COMPILATION", "compilation", "TCMP"]) or "-"
     origin = get_first_tag(tags, ["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"]) or "-"
+
+    # Multi-artist breakdown
+    from apolo.utils import parse_artists
+    main_tagged = get_all_tags(tags, ["MAIN_ARTIST", "main_artist", "ARTIST_MAIN", "artist_main"])
+    feat_tagged = get_all_tags(tags, ["FEATURED_ARTIST", "featured_artist", "ARTIST_FEATURED", "artist_featured"])
+    composers = get_all_tags(tags, ["COMPOSER", "composer", "TCOM"])
+    lyricists = get_all_tags(tags, ["LYRICIST", "lyricist", "TEXT", "WRITER", "writer", "AUTHOR", "author"])
+
+    if not main_tagged and not feat_tagged and artist != "-":
+        m, f, a, _ = parse_artists(artist, title)
+        main_tagged = m
+        feat_tagged = f
+        all_artists_list = a
+    else:
+        all_artists_list = list(artist_tag_list)
+        for a in main_tagged + feat_tagged:
+            if a not in all_artists_list:
+                all_artists_list.append(a)
 
     # Lyrics check
     lyrics_raw = get_first_tag(tags, ["LYRICS", "lyrics", "USLT"])
@@ -153,7 +195,17 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     table.add_section()
     table.add_row("Title", title)
     table.add_row("Artist", artist)
+    if len(all_artists_list) > 1 or feat_tagged or (main_tagged and len(main_tagged) > 1):
+        table.add_row("All Artists", ", ".join(all_artists_list) if all_artists_list else "-")
+        if main_tagged:
+            table.add_row("Main Artists", ", ".join(main_tagged))
+        if feat_tagged:
+            table.add_row("Featured Artists", ", ".join(feat_tagged))
     table.add_row("Album Artist", album_artist)
+    if composers:
+        table.add_row("Composer", ", ".join(composers))
+    if lyricists:
+        table.add_row("Lyricist / Writer", ", ".join(lyricists))
     table.add_row("Album", album)
     table.add_row("Track / Total", f"{track_num} / {track_total}")
     table.add_row("Disc / Total", f"{disc_num} / {disc_total}")

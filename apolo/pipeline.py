@@ -545,6 +545,28 @@ class ProcessingPipeline:
         except Exception:
             pass
 
+        extra_tags = {}
+        if has_native_tags and audio and getattr(audio, "tags", None):
+            standard_handled = {
+                "TITLE", "TIT2", "ARTIST", "TPE1", "ALBUMARTIST", "TPE2",
+                "ALBUM", "TALB", "DATE", "TDRC", "TYER", "GENRE", "TCON",
+                "ORIGIN", "SOURCE", "ORIGEN", "LYRICS", "USLT", "UNSYNCEDLYRICS",
+                "TRACKNUMBER", "TRCK", "TRACKTOTAL", "TOTALTRACKS",
+                "DISCNUMBER", "TPOS", "DISCTOTAL", "TOTALDISCS",
+                "COMPILATION", "TCMP", "METADATA_BLOCK_PICTURE", "APIC", "COVR"
+            }
+            try:
+                for k in audio.tags.keys():
+                    k_str = str(k).upper()
+                    if k_str not in standard_handled and not k_str.startswith("---"):
+                        val = audio.tags[k]
+                        if isinstance(val, (list, tuple)):
+                            extra_tags[k_str] = [str(x) for x in val]
+                        else:
+                            extra_tags[k_str] = [str(val)]
+            except Exception:
+                pass
+
         # Fallback to parse track number from filename if missing from tags
         if raw_track_num is None:
             match_num = re.match(r"^(\d{1,3})\s*[-_.]\s*", file_path.name)
@@ -580,6 +602,7 @@ class ProcessingPipeline:
             "duration": duration,
             "cover_art_data": cover_art_data,
             "has_native_tags": has_native_tags,
+            "extra_tags": extra_tags,
         }
 
     def process_file(
@@ -624,6 +647,7 @@ class ProcessingPipeline:
                 synced_lyrics=info["lyrics"],
                 duration=duration,
                 provider_source="existing_metadata",
+                extra_tags=info.get("extra_tags", {}),
             )
         else:
             search_query = f"{raw_artist} {raw_title}" if raw_artist else raw_title
@@ -669,6 +693,7 @@ class ProcessingPipeline:
                     cover_art_data=info["cover_art_data"],
                     synced_lyrics=info["lyrics"],
                     duration=duration,
+                    extra_tags=info.get("extra_tags", {}),
                 )
             else:
                 if match.track_number is None and info["track_number"] is not None:
@@ -683,6 +708,8 @@ class ProcessingPipeline:
                     match.cover_art_data = info["cover_art_data"]
                 if not match.synced_lyrics and info["lyrics"]:
                     match.synced_lyrics = info["lyrics"]
+                if info.get("extra_tags"):
+                    match.extra_tags = dict(info["extra_tags"])
 
         # Assign origin: CLI param > existing tag in file > config default
         final_origin = origin or info.get("origin") or self.config.downloader.default_origin
@@ -778,6 +805,39 @@ class ProcessingPipeline:
             )
             if res:
                 results.append(res)
+
+        # Check album consensus on processed results
+        from apolo.utils import infer_consensus_album_artist, infer_consensus_date
+        albums_grouped: Dict[Tuple[str, str], List[Tuple[Path, Optional[Path], TrackMetadata]]] = {}
+        for r in results:
+            alb = r[2].album
+            if alb and alb.lower() not in ["single", "singles", "unknown"]:
+                prim_artist = extract_primary_artist(r[2].album_artist or r[2].artist) or ""
+                albums_grouped.setdefault((alb.lower(), prim_artist.lower()), []).append(r)
+
+        for (alb_name, alb_artist_key), track_tuples in albums_grouped.items():
+            if len(track_tuples) >= 2:
+                metas = [t[2] for t in track_tuples]
+                consensus_artist = infer_consensus_album_artist(metas, threshold=0.70)
+                consensus_date = infer_consensus_date(metas, threshold=0.50)
+                changed_any = False
+                for dest_audio, dest_lrc, meta in track_tuples:
+                    tag_updates = {}
+                    if consensus_artist and meta.album_artist != consensus_artist:
+                        meta.album_artist = consensus_artist
+                        meta.album_artists = [consensus_artist]
+                        tag_updates["album_artist"] = consensus_artist
+                        changed_any = True
+                    if consensus_date and meta.date != consensus_date:
+                        meta.date = consensus_date
+                        tag_updates["date"] = consensus_date
+                        changed_any = True
+
+                    if tag_updates and not dry_run and dest_audio.exists():
+                        AudioTagger.update_tags(dest_audio, tag_updates)
+
+                if changed_any and not dry_run:
+                    self.reorganize_paths([t[0] for t in track_tuples if t[0].exists()])
 
         if not dry_run:
             for d in sorted(source_dirs, key=lambda p: len(p.parts), reverse=True):
@@ -898,6 +958,20 @@ class ProcessingPipeline:
                         shutil.move(str(old_lrc), str(new_lrc))
 
                     shutil.move(str(file_path), str(expected_dest))
+
+                    # Move companion cover images if old folder has no more audio files
+                    old_parent = file_path.parent
+                    if old_parent.exists() and old_parent != expected_dest.parent:
+                        remaining_audio = [p for p in old_parent.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+                        if not remaining_audio:
+                            for img_name in ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"]:
+                                old_img = old_parent / img_name
+                                new_img = expected_dest.parent / img_name
+                                if old_img.exists() and not new_img.exists():
+                                    try:
+                                        shutil.move(str(old_img), str(new_img))
+                                    except Exception:
+                                        pass
 
                     # Clean up empty parent directories
                     parent = file_path.parent

@@ -43,6 +43,11 @@ class DeezerProvider:
                 track_position = item.get("track_position")
                 disk_number = item.get("disk_number")
 
+                album_artist = artist
+                main_artists: List[str] = []
+                featured_artists: List[str] = []
+                all_artists: List[str] = []
+
                 # Fetch extra track & album details
                 if track_id:
                     try:
@@ -52,26 +57,62 @@ class DeezerProvider:
                             track_position = trk_data.get("track_position") or track_position
                             disk_number = trk_data.get("disk_number") or disk_number
                             release_date = trk_data.get("release_date")
+
+                            contributors = trk_data.get("contributors", [])
+                            if contributors:
+                                for c in contributors:
+                                    c_name = c.get("name")
+                                    c_role = (c.get("role") or "").lower()
+                                    if not c_name:
+                                        continue
+                                    if c_role == "featured":
+                                        featured_artists.append(c_name)
+                                    else:
+                                        main_artists.append(c_name)
+                                    if c_name not in all_artists:
+                                        all_artists.append(c_name)
                     except Exception:
                         pass
 
-                if album_id and not release_date:
+                if album_id:
                     try:
                         alb_resp = requests.get(f"{self.ALBUM_URL}/{album_id}", timeout=self.timeout)
                         if alb_resp.status_code == 200:
                             alb_data = alb_resp.json()
-                            release_date = alb_data.get("release_date") or release_date
+                            if not release_date:
+                                release_date = alb_data.get("release_date") or release_date
                             track_total = alb_data.get("nb_tracks")
                             genres_data = alb_data.get("genres", {}).get("data", [])
                             if genres_data:
                                 genre = genres_data[0].get("name")
+                            alb_artist_obj = alb_data.get("artist", {})
+                            if alb_artist_obj.get("name"):
+                                album_artist = alb_artist_obj.get("name")
                     except Exception:
                         pass
 
+                from apolo.utils import parse_artists
+                if not main_artists and not featured_artists:
+                    m, f, a, formatted_artist = parse_artists(artist, title)
+                    main_artists = m
+                    featured_artists = f
+                    all_artists = a
+                else:
+                    if not main_artists and artist:
+                        main_artists = [artist]
+                    _, _, _, formatted_artist = parse_artists(
+                        " & ".join(main_artists) + (f" feat. {' & '.join(featured_artists)}" if featured_artists else ""),
+                        title,
+                    )
+
                 track_meta = TrackMetadata(
                     title=title,
-                    artist=artist,
-                    album_artist=artist,
+                    artist=formatted_artist or artist,
+                    artists=all_artists or ([artist] if artist else []),
+                    main_artists=main_artists or ([artist] if artist else []),
+                    featured_artists=featured_artists,
+                    album_artist=album_artist or (main_artists[0] if main_artists else artist),
+                    album_artists=[album_artist] if album_artist else ([main_artists[0]] if main_artists else []),
                     album=album_title,
                     track_number=track_position,
                     track_total=track_total,

@@ -103,7 +103,7 @@ DIVERSITY_TEST_CASES = [
             date="2024-01-10",
             genre="Indie / Underground",
         ),
-        "expected_subpath": "Rusowsky & mori/Singles/BABY M (2024).opus",
+        "expected_subpath": "Rusowsky/Singles/BABY M (2024).opus",
         "is_compilation": False,
     },
     {

@@ -141,9 +141,18 @@ class MetadataMatcher:
             title_ratio = fuzz.ratio(clean_title.lower(), cand_title.lower())
             title_partial = fuzz.partial_ratio(clean_title.lower(), cand_title.lower())
             title_token = fuzz.token_sort_ratio(clean_title.lower(), cand_title.lower())
-            best_title_score = max(title_ratio, title_partial, title_token)
 
-            if title_ratio < 45 and title_partial < 70 and title_token < 60:
+            len_min = min(len(clean_title), len(cand_title))
+            len_max = max(len(clean_title), len(cand_title))
+            len_disparity = (len_max - len_min) / max(1, len_max)
+            if len_disparity > 0.4 and title_ratio < 65:
+                effective_partial = min(title_partial, max(title_ratio, title_token))
+            else:
+                effective_partial = title_partial
+
+            best_title_score = max(title_ratio, effective_partial, title_token)
+
+            if title_ratio < 45 and effective_partial < 70 and title_token < 60:
                 return 0.0
         else:
             best_title_score = 70.0

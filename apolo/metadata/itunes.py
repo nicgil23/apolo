@@ -52,10 +52,18 @@ class iTunesProvider:
                 duration_ms = item.get("trackTimeMillis")
                 duration = duration_ms / 1000.0 if duration_ms else None
 
+                from apolo.utils import parse_artists
+                main_artists, featured_artists, all_artists, formatted_artist = parse_artists(artist, title)
+                album_artist = main_artists[0] if main_artists else artist
+
                 track_meta = TrackMetadata(
                     title=title,
-                    artist=artist,
-                    album_artist=artist,
+                    artist=formatted_artist or artist,
+                    artists=all_artists or ([artist] if artist else []),
+                    main_artists=main_artists or ([artist] if artist else []),
+                    featured_artists=featured_artists,
+                    album_artist=album_artist,
+                    album_artists=[album_artist] if album_artist else [],
                     album=album,
                     track_number=track_num,
                     track_total=track_count,

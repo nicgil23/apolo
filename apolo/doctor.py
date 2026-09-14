@@ -45,6 +45,7 @@ class LibraryHealthReport:
     missing_lyrics: List[Path] = field(default_factory=list)
     missing_or_lowres_covers: List[Tuple[Path, str]] = field(default_factory=list)  # (path, reason)
     missing_essential_tags: List[Tuple[Path, List[str]]] = field(default_factory=list)  # (path, missing_fields)
+    fragmented_artist_folders: List[Tuple[Path, Path, str]] = field(default_factory=list)  # (fragmented_dir, target_dir, primary_name)
     health_score: float = 100.0
     lyrics_coverage: float = 100.0
 
@@ -293,6 +294,20 @@ class LibraryDoctor:
                             )
                         )
 
+        # 7. Fragmented Collaborative Folders audit
+        try:
+            from apolo.utils import parse_artists
+            root_dirs = [p for p in target_dir.iterdir() if p.is_dir() and "Playlists" not in p.parts and p.name.lower() != "various artists"]
+            for folder in root_dirs:
+                m_artists, _, all_a, _ = parse_artists(folder.name)
+                if len(all_a) > 1 and m_artists:
+                    primary_name = m_artists[0]
+                    base_dir = self.pipeline.organizer._resolve_case_insensitive_dir(target_dir, primary_name)
+                    if base_dir.exists() and base_dir.resolve() != folder.resolve():
+                        report.fragmented_artist_folders.append((folder, base_dir, primary_name))
+        except Exception:
+            pass
+
         # Calculate Health Score (excluding lyrics, as lyrics depend on external API availability)
         score = 100.0
         lyrics_cov = 100.0
@@ -301,7 +316,8 @@ class LibraryDoctor:
             inc_pen = min(30.0, (len(report.incomplete_albums) * 10.0))
             cov_pen = min(25.0, (len(report.missing_or_lowres_covers) / report.total_tracks) * 25.0)
             tag_pen = min(25.0, (len(report.missing_essential_tags) / report.total_tracks) * 25.0)
-            score = max(0.0, 100.0 - (dup_pen + inc_pen + cov_pen + tag_pen))
+            frag_pen = min(15.0, (len(report.fragmented_artist_folders) * 5.0))
+            score = max(0.0, 100.0 - (dup_pen + inc_pen + cov_pen + tag_pen + frag_pen))
 
             tracks_with_lyrics = max(0, report.total_tracks - len(report.missing_lyrics))
             lyrics_cov = (tracks_with_lyrics / report.total_tracks) * 100.0
@@ -309,6 +325,44 @@ class LibraryDoctor:
         report.health_score = round(score, 1)
         report.lyrics_coverage = round(lyrics_cov, 1)
         return report
+
+    def repair_fragmented_folders(
+        self,
+        fragmented: List[Tuple[Path, Path, str]],
+        on_progress: Optional[Callable[[str, str], None]] = None,
+    ) -> int:
+        """Unifies fragmented collaborative artist folders into their primary artist folder."""
+        repaired = 0
+        for folder, base_dir, primary_name in fragmented:
+            if not folder.exists():
+                continue
+            audio_files = [p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+            if not audio_files:
+                try:
+                    folder.rmdir()
+                except Exception:
+                    pass
+                continue
+
+            for idx, af in enumerate(audio_files, 1):
+                if on_progress:
+                    on_progress("fragmented", f"Unifying ({idx}/{len(audio_files)}): {af.name} -> {primary_name}")
+                AudioTagger.update_tags(af, {"album_artist": primary_name})
+
+            self.pipeline.reorganize_paths(audio_files)
+            repaired += 1
+
+            # Remove empty directory
+            try:
+                for sub in sorted(folder.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+                    if sub.is_dir() and not any(sub.iterdir()):
+                        sub.rmdir()
+                if folder.exists() and not any(folder.iterdir()):
+                    folder.rmdir()
+            except Exception:
+                pass
+
+        return repaired
 
     def repair_lyrics(
         self,
