@@ -73,6 +73,9 @@ class TrackMetadata:
             if self.track_total is None:
                 self.track_total = 1
 
+        from apolo.metadata.genres import clean_genre
+        self.genre = clean_genre(self.genre, self.artist or self.album_artist)
+
     def get_album_artist_or_artist(self) -> str:
         if self.album_artist:
             return self.album_artist

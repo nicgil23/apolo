@@ -541,3 +541,106 @@ class LibraryDoctor:
                 repaired += 1
 
         return repaired
+
+    def fix_library_genres(
+        self,
+        library_dir: Optional[Path] = None,
+        dry_run: bool = False,
+        on_progress: Optional[Callable[[str, str], None]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Scans all audio tracks in library_dir, audits genres, normalizes inconsistent/slash genres,
+        infers missing genres for known artists, and fetches missing genres from iTunes/Deezer.
+        Returns: summary dictionary with detailed list of changes.
+        """
+        from apolo.metadata.genres import infer_genre_from_artist, normalize_genre
+
+        target_dir = library_dir or self.config.directories.library_dir
+        if not target_dir.exists():
+            return {
+                "total_scanned": 0,
+                "modified": 0,
+                "already_normalized": 0,
+                "unresolved": 0,
+                "changes": [],
+            }
+
+        all_audio_files = sorted([
+            p for p in target_dir.rglob("*")
+            if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS and "Playlists" not in p.parts
+        ])
+
+        summary: Dict[str, Any] = {
+            "total_scanned": len(all_audio_files),
+            "modified": 0,
+            "already_normalized": 0,
+            "unresolved": 0,
+            "changes": [],
+        }
+
+        for idx, file_path in enumerate(all_audio_files, 1):
+            if on_progress:
+                on_progress("genres", f"Auditing/fixing genres ({idx}/{len(all_audio_files)}): {file_path.name}")
+
+            info = self.pipeline.extract_file_info(file_path)
+            current_genre = (info.get("genre") or "").strip()
+            artist = info.get("artist") or ""
+            title = info.get("title") or file_path.stem
+
+            final_genre = None
+            source = None
+
+            if current_genre:
+                normalized = normalize_genre(current_genre)
+                if normalized and normalized != current_genre:
+                    final_genre = normalized
+                    source = "Normalized"
+                elif normalized:
+                    summary["already_normalized"] += 1
+                    continue
+                else:
+                    current_genre = ""
+
+            if not final_genre:
+                # 1. Heuristic fallback by artist
+                inferred = infer_genre_from_artist(artist)
+                if inferred:
+                    final_genre = inferred
+                    source = "Artist Heuristic"
+                else:
+                    # 2. Query online providers (iTunes / Deezer)
+                    query = f"{artist} {title}".strip()
+                    if query:
+                        try:
+                            res_itunes = self.matcher.itunes.search(query, limit=1)
+                            if res_itunes and res_itunes[0].genre:
+                                final_genre = normalize_genre(res_itunes[0].genre)
+                                source = "iTunes"
+                        except Exception:
+                            pass
+
+                        if not final_genre:
+                            try:
+                                res_deezer = self.matcher.deezer.search(query, limit=1)
+                                if res_deezer and res_deezer[0].genre:
+                                    final_genre = normalize_genre(res_deezer[0].genre)
+                                    source = "Deezer"
+                            except Exception:
+                                pass
+
+            if final_genre and final_genre != current_genre:
+                summary["modified"] += 1
+                summary["changes"].append({
+                    "file": file_path,
+                    "title": title,
+                    "artist": artist,
+                    "old_genre": current_genre or "<Sin Género>",
+                    "new_genre": final_genre,
+                    "source": source or "Auto",
+                })
+                if not dry_run:
+                    AudioTagger.update_tags(file_path, {"genre": final_genre})
+            elif not current_genre:
+                summary["unresolved"] += 1
+
+        return summary

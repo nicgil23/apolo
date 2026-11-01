@@ -747,7 +747,8 @@ def doctor_cmd(
     repair_lyrics: bool = typer.Option(False, "--repair-lyrics", help="Automatically fetch and embed missing synced lyrics from LRCLIB"),
     repair_covers: bool = typer.Option(False, "--repair-covers", help="Automatically fetch and embed missing high-res covers"),
     repair_fragmented: bool = typer.Option(False, "--repair-fragmented", help="Automatically unify fragmented collaborative artist folders"),
-    repair_all: bool = typer.Option(False, "--repair", "--repair-all", help="Run all repairs (lyrics, covers, fragmented folders)"),
+    fix_genres: bool = typer.Option(False, "--fix-genres", help="Audit, fetch missing genres from online providers / artist heuristics, and normalize genre tags across the library"),
+    repair_all: bool = typer.Option(False, "--repair", "--repair-all", help="Run all repairs (lyrics, covers, fragmented folders, genres)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview repairs without modifying files on disk"),
 ):
     """[bold green]Library Health & Diagnostics[/bold green]: Audit duplicates, incomplete albums, controlled partial albums, missing lyrics, and low-res covers with automated batch repairs."""
@@ -796,6 +797,7 @@ def doctor_cmd(
     do_lyrics = repair_lyrics or repair_all
     do_covers = repair_covers or repair_all
     do_fragmented = repair_fragmented or repair_all
+    do_genres = fix_genres or repair_all
 
     if do_fragmented:
         if not report.fragmented_artist_folders:
@@ -834,7 +836,39 @@ def doctor_cmd(
                 repaired = doctor.repair_covers(tracks_to_cover, on_progress=update_status)
             console.print(f"[bold green]Embedded high-res covers for {repaired} / {len(tracks_to_cover)} tracks.[/bold green]")
 
-    if do_lyrics or do_covers or do_fragmented:
+    if do_genres:
+        prefix = "[DRY-RUN] " if dry_run else ""
+        with console.status(f"[bold cyan]{prefix}Auditing and normalizing library genres...[/bold cyan]") as status:
+            def update_status(step: str, msg: str):
+                status.update(f"[bold cyan]{msg}[/bold cyan]")
+            genre_res = doctor.fix_library_genres(library_dir=target_dir, dry_run=dry_run, on_progress=update_status)
+
+        changes = genre_res["changes"]
+        if not changes:
+            console.print("[bold green]All track genres are already normalized. No repair needed.[/bold green]")
+        else:
+            header_style = "bold yellow" if dry_run else "bold cyan"
+            title_text = f"[bold yellow]Genre Normalization (DRY-RUN: {genre_res['modified']} would update)[/bold yellow]" if dry_run else f"Genre Normalization ({genre_res['modified']} updated)"
+            t = Table(title=title_text, show_header=True, header_style=header_style)
+            t.add_column("Track", style="bold green")
+            t.add_column("Artist", style="yellow")
+            t.add_column("Old Genre", style="dim red")
+            t.add_column("New Genre", style="bold cyan")
+            t.add_column("Source", style="dim")
+
+            for ch in changes[:50]:
+                t.add_row(ch["title"], ch["artist"], ch["old_genre"], ch["new_genre"], ch["source"])
+
+            console.print(t)
+            if len(changes) > 50:
+                console.print(f"[dim]...and {len(changes) - 50} more tracks.[/dim]")
+
+            console.print(
+                f"[bold green]{prefix}Finished genre repair:[/bold green] {genre_res['modified']} updated, "
+                f"{genre_res['already_normalized']} already normalized, {genre_res['unresolved']} unresolved."
+            )
+
+    if do_lyrics or do_covers or do_fragmented or do_genres:
         return
 
     # Filter views if specific flags requested
