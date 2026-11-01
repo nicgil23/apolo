@@ -61,6 +61,18 @@ class TrackMetadata:
         elif self.album_artists and not self.album_artist:
             self.album_artist = self.album_artists[0]
 
+        if not self.album or self.album.strip().lower() in ["single", "singles", "unknown album"]:
+            if self.title:
+                self.album = f"{self.title} - Single"
+            else:
+                self.album = "Single"
+
+        from apolo.utils import is_single_release
+        if self.track_number is None and is_single_release(self.album, self.track_total):
+            self.track_number = 1
+            if self.track_total is None:
+                self.track_total = 1
+
     def get_album_artist_or_artist(self) -> str:
         if self.album_artist:
             return self.album_artist

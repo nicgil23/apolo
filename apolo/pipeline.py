@@ -1,14 +1,13 @@
-import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import mutagen
 import requests
 
 from apolo.config import ApoloConfig, load_config
-from apolo.downloader import AudioDownloader, DownloadedTrackInfo
+from apolo.downloader import AudioDownloader
 from apolo.lyrics.lrclib import LRCLIBProvider
 from apolo.metadata.matcher import MetadataMatcher
 from apolo.metadata.models import TrackMetadata
@@ -120,11 +119,17 @@ class ProcessingPipeline:
         self,
         url: str,
         origin: Optional[str] = None,
+        suggested_title: Optional[str] = None,
         dry_run: bool = False,
         candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
         progress_callback: Optional[Callable[[float, str], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
+        on_playlist_init: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None,
+        on_subtrack_status: Optional[Callable[[str, str, Optional[str], int, Optional[float]], None]] = None,
+        on_subtrack_progress: Optional[Callable[[str, float, str], None]] = None,
+        on_active_track: Optional[Callable[[int, int, str, Optional[str], float, str], None]] = None,
+        on_track_title: Optional[Callable[[str], None]] = None,
     ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
         """
         Downloads URL, matches metadata, gets synced lyrics, tags, and organizes to library.
@@ -136,8 +141,14 @@ class ProcessingPipeline:
         downloaded_items = self.downloader.download_url(
             url,
             origin=origin,
+            suggested_title=suggested_title,
             progress_callback=progress_callback,
             cancel_check=cancel_check,
+            on_playlist_init=on_playlist_init,
+            on_subtrack_status=on_subtrack_status,
+            on_subtrack_progress=on_subtrack_progress,
+            on_active_track=on_active_track,
+            on_track_title=on_track_title,
         )
         results = []
 
@@ -210,6 +221,9 @@ class ProcessingPipeline:
             # Set origin
             match.origin = item.origin or origin or self.config.downloader.default_origin
 
+            if on_track_title and not item.subtrack_id:
+                on_track_title(f"{match.artist} - {match.title}")
+
             if on_progress:
                 on_progress("lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'...")
 
@@ -243,6 +257,9 @@ class ProcessingPipeline:
 
             dest_audio, dest_lrc = self.organizer.organize_track(opus_file, match)
             results.append((dest_audio, dest_lrc, match))
+
+            if item.subtrack_id and on_subtrack_status:
+                on_subtrack_status(item.subtrack_id, "completed", None, 0, None)
 
         return results
 
@@ -430,6 +447,7 @@ class ProcessingPipeline:
         raw_disc_num = None
         raw_disc_total = None
         raw_compilation = False
+        raw_controlled_anomaly = False
         raw_date = None
         raw_genre = None
         raw_origin = None
@@ -466,81 +484,98 @@ class ProcessingPipeline:
                 duration = getattr(audio.info, "length", None)
                 tags = getattr(audio, "tags", None)
                 if tags:
-                    has_native_tags = len(tags) > 0
-                    for k in ["TITLE", "title", "TIT2"]:
-                        if k in tags:
-                            raw_title = str(tags[k][0])
-                            break
-                    for k in ["ARTIST", "artist", "TPE1"]:
-                        if k in tags:
-                            raw_artist = str(tags[k][0])
-                            break
-                    for k in ["ALBUMARTIST", "albumartist", "TPE2"]:
-                        if k in tags:
-                            raw_album_artist = str(tags[k][0])
-                            break
-                    for k in ["ALBUM", "album", "TALB"]:
-                        if k in tags:
-                            raw_album = str(tags[k][0])
-                            break
-                    for k in ["DATE", "date", "TDRC", "TYER"]:
-                        if k in tags:
-                            raw_date = str(tags[k][0])
-                            break
-                    for k in ["GENRE", "genre", "TCON"]:
-                        if k in tags:
-                            raw_genre = str(tags[k][0])
-                            break
-                    for k in ["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"]:
-                        if k in tags:
-                            raw_origin = str(tags[k][0])
-                            break
-                    for k in ["LYRICS", "lyrics", "USLT", "UNSYNCEDLYRICS"]:
-                        if k in tags:
-                            raw_lyrics = str(tags[k][0])
-                            break
-                    for k in ["TRACKNUMBER", "tracknumber", "TRCK"]:
-                        if k in tags:
+                    has_native_tags = True
+                    def safe_get_tag(keys):
+                        for k in keys:
                             try:
-                                parts = str(tags[k][0]).split("/")
-                                raw_track_num = int(parts[0])
-                                if len(parts) > 1:
-                                    raw_track_total = int(parts[1])
+                                if k in tags:
+                                    val = tags[k]
+                                    if isinstance(val, (list, tuple)) and len(val) > 0:
+                                        return str(val[0])
+                                    elif val is not None:
+                                        return str(val)
                             except Exception:
-                                pass
-                            break
+                                continue
+                        return None
+
+                    raw_title = safe_get_tag(["TITLE", "title", "TIT2", "\xa9nam", "©nam"])
+                    raw_artist = safe_get_tag(["ARTIST", "artist", "TPE1", "\xa9ART", "©ART"])
+                    raw_album_artist = safe_get_tag(["ALBUMARTIST", "albumartist", "TPE2", "aART"])
+                    raw_album = safe_get_tag(["ALBUM", "album", "TALB", "\xa9alb", "©alb"])
+                    raw_date = safe_get_tag(["DATE", "date", "TDRC", "TYER", "\xa9day", "©day"])
+                    raw_genre = safe_get_tag(["GENRE", "genre", "TCON", "\xa9gen", "©gen"])
+                    raw_origin = safe_get_tag(["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"])
+                    tag_lyrics = safe_get_tag(["LYRICS", "lyrics", "USLT", "UNSYNCEDLYRICS", "\xa9lyr", "©lyr"])
+                    if tag_lyrics:
+                        raw_lyrics = tag_lyrics
+
+                    track_str = safe_get_tag(["TRACKNUMBER", "tracknumber", "TRCK"])
+                    if track_str:
+                        try:
+                            parts = track_str.split("/")
+                            raw_track_num = int(parts[0])
+                            if len(parts) > 1:
+                                raw_track_total = int(parts[1])
+                        except Exception:
+                            pass
+                    try:
+                        if "trkn" in tags:
+                            trkn = tags["trkn"][0]
+                            if isinstance(trkn, (tuple, list)):
+                                if trkn[0]:
+                                    raw_track_num = int(trkn[0])
+                                if len(trkn) > 1 and trkn[1]:
+                                    raw_track_total = int(trkn[1])
+                    except Exception:
+                        pass
                     if raw_track_total is None:
-                        for k in ["TRACKTOTAL", "tracktotal", "TOTALTRACKS", "totaltracks"]:
-                            if k in tags:
-                                try:
-                                    raw_track_total = int(str(tags[k][0]).split("/")[0])
-                                    break
-                                except Exception:
-                                    pass
-
-                    for k in ["DISCNUMBER", "discnumber", "TPOS"]:
-                        if k in tags:
+                        total_str = safe_get_tag(["TRACKTOTAL", "tracktotal", "TOTALTRACKS", "totaltracks"])
+                        if total_str:
                             try:
-                                parts = str(tags[k][0]).split("/")
-                                raw_disc_num = int(parts[0])
-                                if len(parts) > 1:
-                                    raw_disc_total = int(parts[1])
+                                raw_track_total = int(total_str.split("/")[0])
                             except Exception:
                                 pass
-                            break
-                    if raw_disc_total is None:
-                        for k in ["DISCTOTAL", "disctotal", "TOTALDISCS", "totaldiscs"]:
-                            if k in tags:
-                                try:
-                                    raw_disc_total = int(str(tags[k][0]).split("/")[0])
-                                    break
-                                except Exception:
-                                    pass
 
-                    for k in ["COMPILATION", "compilation", "TCMP"]:
-                        if k in tags:
-                            raw_compilation = str(tags[k][0]) in ["1", "true", "True"]
-                            break
+                    disc_str = safe_get_tag(["DISCNUMBER", "discnumber", "TPOS"])
+                    if disc_str:
+                        try:
+                            parts = disc_str.split("/")
+                            raw_disc_num = int(parts[0])
+                            if len(parts) > 1:
+                                raw_disc_total = int(parts[1])
+                        except Exception:
+                            pass
+                    try:
+                        if "disk" in tags:
+                            disk = tags["disk"][0]
+                            if isinstance(disk, (tuple, list)):
+                                if disk[0]:
+                                    raw_disc_num = int(disk[0])
+                                if len(disk) > 1 and disk[1]:
+                                    raw_disc_total = int(disk[1])
+                    except Exception:
+                        pass
+                    if raw_disc_total is None:
+                        dtotal_str = safe_get_tag(["DISCTOTAL", "disctotal", "TOTALDISCS", "totaldiscs"])
+                        if dtotal_str:
+                            try:
+                                raw_disc_total = int(dtotal_str.split("/")[0])
+                            except Exception:
+                                pass
+
+                    comp_str = safe_get_tag(["COMPILATION", "compilation", "TCMP"])
+                    if comp_str:
+                        raw_compilation = comp_str in ["1", "true", "True"]
+                    try:
+                        if "cpil" in tags:
+                            raw_compilation = bool(tags["cpil"])
+                    except Exception:
+                        pass
+
+                    raw_controlled_anomaly = False
+                    anomaly_str = safe_get_tag(["CONTROLLED_ANOMALY", "controlled_anomaly", "PARTIAL_ALBUM", "partial_album", "ANOMALIA_CONTROLADA", "anomalia_controlada"])
+                    if anomaly_str:
+                        raw_controlled_anomaly = anomaly_str.strip().lower() in ["1", "true", "yes", "si", "sí"]
 
         except Exception:
             pass
@@ -602,6 +637,7 @@ class ProcessingPipeline:
             "duration": duration,
             "cover_art_data": cover_art_data,
             "has_native_tags": has_native_tags,
+            "controlled_anomaly": raw_controlled_anomaly,
             "extra_tags": extra_tags,
         }
 
@@ -818,7 +854,7 @@ class ProcessingPipeline:
         for (alb_name, alb_artist_key), track_tuples in albums_grouped.items():
             if len(track_tuples) >= 2:
                 metas = [t[2] for t in track_tuples]
-                consensus_artist = infer_consensus_album_artist(metas, threshold=0.70)
+                consensus_artist = infer_consensus_album_artist(metas, threshold=0.50)
                 consensus_date = infer_consensus_date(metas, threshold=0.50)
                 changed_any = False
                 for dest_audio, dest_lrc, meta in track_tuples:

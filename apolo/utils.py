@@ -18,24 +18,77 @@ def normalize_search_string(text: str) -> str:
             result.append(" ")
     cleaned = "".join(result)
     cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned.strip()
+    cleaned = cleaned.strip()
+    if not cleaned and text.strip():
+        # Fallback for symbol-only strings (e.g. '◠', '★', '$$$', '...', '///')
+        fallback = "".join(ch for ch in text if unicodedata.category(ch) != "Cc").strip()
+        return fallback or text.strip()
+    return cleaned
 
 
-def sanitize_filename(name: str, replace_char: str = "_", max_chars: int = 180) -> str:
+def strip_accents(text: Optional[str]) -> str:
+    """Removes diacritics / accent marks from text, returning ASCII-equivalent base characters."""
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFD", text)
+    return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+
+
+def normalize_dir_key(text: Optional[str]) -> str:
+    """
+    Normalizes a directory name for comparison by removing diacritics/accents,
+    special symbols, and excess whitespace, lowercased.
+    """
+    if not text:
+        return ""
+    clean = strip_accents(text).lower()
+    clean = re.sub(r"[^\w\s]", "", clean)
+    clean = re.sub(r"\s+", " ", clean)
+    return clean.strip()
+
+
+UNICODE_FS_REPLACEMENTS = {
+    "/": "／",   # Fullwidth solidus \uFF0F
+    "\\": "＼",  # Fullwidth reverse solidus \uFF3C
+    ":": "：",   # Fullwidth colon \uFF1A
+    "*": "＊",   # Fullwidth asterisk \uFF0A
+    "?": "？",   # Fullwidth question mark \uFF1F
+    '"': "”",   # Right double quotation mark \u201D
+    "<": "＜",   # Fullwidth less-than sign \uFF1C
+    ">": "＞",   # Fullwidth greater-than sign \uFF1E
+    "|": "｜",   # Fullwidth vertical line \uFF5C
+}
+
+
+def sanitize_filename(
+    name: str,
+    replace_char: Optional[str] = None,
+    max_chars: int = 180,
+    use_unicode: bool = True,
+) -> str:
     """
     Sanitize a string to be safely used as a filename or directory name,
     ensuring it does not exceed OS filesystem byte/length limits.
+    By default, maps reserved characters (:, /, ?, *, etc.) to aesthetic full-width Unicode characters.
     """
     if not name:
         return "Unknown"
-    # Replace illegal characters
-    cleaned = re.sub(r'[\\/*?:"<>|]+', replace_char, name)
+
+    if replace_char is not None:
+        cleaned = re.sub(r'[\\/*?:"<>|]+', replace_char, name)
+        cleaned = re.sub(r"_+", "_", cleaned)
+    elif use_unicode:
+        cleaned = "".join(UNICODE_FS_REPLACEMENTS.get(ch, ch) for ch in name)
+    else:
+        cleaned = re.sub(r'[\\/*?:"<>|]+', "_", name)
+        cleaned = re.sub(r"_+", "_", cleaned)
+
     # Remove control characters
     cleaned = re.sub(r"[\x00-\x1f\x7f]", "", cleaned)
-    # Replace multiple spaces/underscores
+    # Normalize multiple spaces
     cleaned = re.sub(r"\s+", " ", cleaned)
-    cleaned = re.sub(r"_+", "_", cleaned)
-    cleaned = cleaned.strip(". _")
+    strip_chars = f". {replace_char}" if replace_char else ". "
+    cleaned = cleaned.strip(strip_chars)
 
     if not cleaned:
         return "Unknown"
@@ -44,7 +97,7 @@ def sanitize_filename(name: str, replace_char: str = "_", max_chars: int = 180) 
     if len(cleaned.encode("utf-8")) > max_chars:
         while len(cleaned.encode("utf-8")) > max_chars:
             cleaned = cleaned[:-1]
-        cleaned = cleaned.strip(". _")
+        cleaned = cleaned.strip(strip_chars)
 
     return cleaned or "Unknown"
 
@@ -252,10 +305,10 @@ def extract_primary_artist(artist_str: Optional[str]) -> Optional[str]:
     return artist_str.strip()
 
 
-def infer_consensus_album_artist(tracks: list, threshold: float = 0.70) -> Optional[str]:
+def infer_consensus_album_artist(tracks: list, threshold: float = 0.50) -> Optional[str]:
     """
     Infers the consensus album artist for a collection of tracks from the same album.
-    If a primary artist accounts for >= threshold (default 70%) of tracks (minimum 2 tracks),
+    If a primary artist accounts for >= threshold (default 50%) of tracks (minimum 2 tracks),
     that artist is returned as the consensus album artist.
     """
     if not tracks or len(tracks) < 2:
@@ -401,6 +454,7 @@ def clean_media_url(url: str) -> str:
     Cleans tracking, radio lists (list=RD...), and noise parameters from URLs.
     If a URL points to a specific video (e.g. watch?v=... or youtu.be/...),
     it strips radio/mix playlist parameters to avoid downloading infinite radio queues.
+    For playlists and albums, it normalizes to standard YouTube playlist format.
     """
     if not url:
         return ""
@@ -414,7 +468,7 @@ def clean_media_url(url: str) -> str:
     if "youtube.com" in netloc or "youtu.be" in netloc:
         query_params = parse_qs(parsed.query)
 
-        # If it's a watch URL or has a 'v' parameter
+        # If it's a watch URL or has a 'v' parameter (single track)
         if "v" in query_params:
             video_id = query_params["v"][0]
             clean_query = f"v={video_id}"
@@ -427,9 +481,16 @@ def clean_media_url(url: str) -> str:
             return f"https://youtu.be/{video_id}"
 
         # If it's an explicit playlist page: /playlist?list=...
-        if "/playlist" in parsed.path and "list" in query_params:
+        if "list" in query_params:
             list_id = query_params["list"][0]
-            scheme = parsed.scheme or "https"
-            return urlunparse((scheme, parsed.netloc, "/playlist", "", f"list={list_id}", ""))
+            return f"https://www.youtube.com/playlist?list={list_id}"
+
+        # If it's a YouTube Music /browse URL with VL playlist ID
+        if "/browse" in parsed.path:
+            path_clean = parsed.path.strip("/")
+            if "VL" in path_clean:
+                list_id = path_clean.split("VL", 1)[1]
+                return f"https://www.youtube.com/playlist?list={list_id}"
 
     return url.strip()
+

@@ -155,6 +155,7 @@ class MetadataMatcher:
             if title_ratio < 45 and effective_partial < 70 and title_token < 60:
                 return 0.0
         else:
+            title_ratio = 70.0
             best_title_score = 70.0
 
         # 2. Artist Similarity Check
@@ -174,7 +175,7 @@ class MetadataMatcher:
                 return 0.0
 
             # For short titles, require high title ratio unless artist is exact match
-            if len(clean_title) <= 6 and best_artist_score < 80 and title_ratio < 75:
+            if clean_title and len(clean_title) <= 6 and best_artist_score < 80 and title_ratio < 75:
                 return 0.0
         else:
             best_artist_score = 70.0
