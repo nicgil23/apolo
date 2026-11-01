@@ -333,7 +333,7 @@ async function loadTasks() {
         const url = btn.getAttribute("data-url");
         if (url) {
           navigator.clipboard.writeText(url);
-          btn.style.color = "#3ea6ff";
+          btn.style.color = "#ff4e45";
           setTimeout(() => {
             btn.style.color = "";
           }, 1500);

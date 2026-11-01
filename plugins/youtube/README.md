@@ -1,6 +1,6 @@
 # Plugin de Apolo para YouTube y YouTube Music
 
-Extensión Manifest V3 para navegadores basados en Chromium (Helium, Brave, Chrome) que integra la descarga directa a la biblioteca de Apolo desde la interfaz web de YouTube y YouTube Music.
+Extensión Manifest V3 ligera para navegadores basados en Chromium (Helium, Brave, Chrome) que integra la descarga directa a la biblioteca de Apolo desde el navegador.
 
 ---
 
@@ -19,7 +19,7 @@ Extensión Manifest V3 para navegadores basados en Chromium (Helium, Brave, Chro
 
 1. Abre `chrome://extensions` en tu navegador.
 2. Activa el **Modo de desarrollador** (arriba a la derecha).
-3. Haz clic en **Cargar descomprimida**.
+3. Haz clic en **Cargar descomprimida** (Load unpacked).
 4. Selecciona la carpeta:
    ```text
    /home/hypr/repos/apolo/plugins/youtube
@@ -29,15 +29,8 @@ Extensión Manifest V3 para navegadores basados en Chromium (Helium, Brave, Chro
 
 ## Uso
 
-### YouTube (youtube.com)
-- **Vídeos**: Se añade un botón "Apolo" en la barra de acciones debajo del reproductor.
-- **Playlists**: Se añade el botón "Descargar Playlist" en la cabecera de la lista.
+Al hacer clic en el icono de Apolo en la barra de extensiones del navegador:
 
-### YouTube Music (music.youtube.com)
-- **Barra de reproducción**: Se añade un icono discreto en los controles inferiores para descargar la pista en reproducción.
-- **Álbumes y Playlists**: Se añade el botón "Descargar con Apolo" en la barra de acciones de la cabecera.
-
-### Menú de la extensión
-- Indicador de estado de conexión (`online` / `offline`).
-- Botón para descargar la pestaña activa.
-- Historial de descargas recientes.
+- **Descarga con 1 clic**: Pulsa "Descargar pestaña activa" mientras estés en cualquier vídeo, canción, álbum o playlist de YouTube o YouTube Music.
+- **Monitor de estado**: Muestra si el servidor local de Apolo está conectado (`127.0.0.1:4533`).
+- **Historial y progreso en vivo**: Visualiza el progreso en tiempo real de descargas individuales y listas de reproducción, con opción de cancelar tareas o vaciar el historial.
