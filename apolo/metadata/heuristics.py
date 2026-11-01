@@ -1,10 +1,10 @@
 import re
 from collections import Counter
-from typing import Optional
+
 from apolo.metadata.parsing import extract_primary_artist
 
 
-def infer_consensus_album_artist(tracks: list, threshold: float = 0.50) -> Optional[str]:
+def infer_consensus_album_artist(tracks: list, threshold: float = 0.50) -> str | None:
     """
     Infers the consensus album artist for a collection of tracks from the same album.
     If a primary artist accounts for >= threshold (default 50%) of tracks (minimum 2 tracks),
@@ -36,7 +36,7 @@ def infer_consensus_album_artist(tracks: list, threshold: float = 0.50) -> Optio
     return None
 
 
-def infer_consensus_date(tracks: list, threshold: float = 0.50) -> Optional[str]:
+def infer_consensus_date(tracks: list, threshold: float = 0.50) -> str | None:
     """
     Infers the consensus release date/year for a collection of tracks from the same album.
     """
@@ -75,7 +75,7 @@ def infer_consensus_date(tracks: list, threshold: float = 0.50) -> Optional[str]
     return dates[0]
 
 
-def is_compilation_album(album_title: Optional[str], album_artist: Optional[str] = None) -> bool:
+def is_compilation_album(album_title: str | None, album_artist: str | None = None) -> bool:
     """Determines if the album is a compilation / Various Artists release."""
     if album_artist:
         norm_aa = album_artist.strip().lower()
@@ -99,7 +99,7 @@ def is_compilation_album(album_title: Optional[str], album_artist: Optional[str]
     return False
 
 
-def is_single_release(album_title: Optional[str], track_total: Optional[int]) -> bool:
+def is_single_release(album_title: str | None, track_total: int | None) -> bool:
     """Determines if a release is a single."""
     if not album_title or album_title.strip().lower() in ["single", "singles", "unknown album"]:
         return True

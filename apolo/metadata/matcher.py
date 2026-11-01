@@ -1,4 +1,3 @@
-from typing import List, Optional, Set
 import requests
 from rapidfuzz import fuzz
 
@@ -11,17 +10,17 @@ from apolo.utils import extract_primary_artist, normalize_search_string
 
 
 class MetadataMatcher:
-    def __init__(self, config: Optional[ApoloConfig] = None):
+    def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
         self.itunes = iTunesProvider()
         self.deezer = DeezerProvider()
         self.musicbrainz = MusicBrainzProvider()
 
-    def search_all(self, query: str, limit_per_provider: int = 10) -> List[TrackMetadata]:
-        results: List[TrackMetadata] = []
-        seen_ids: Set[str] = set()
+    def search_all(self, query: str, limit_per_provider: int = 10) -> list[TrackMetadata]:
+        results: list[TrackMetadata] = []
+        seen_ids: set[str] = set()
 
-        def add_unique(items: List[TrackMetadata]):
+        def add_unique(items: list[TrackMetadata]):
             for item in items:
                 uid = f"{item.provider_source}:{item.source_id or (item.artist + item.title)}"
                 if uid not in seen_ids:
@@ -42,12 +41,12 @@ class MetadataMatcher:
     def get_ranked_candidates(
         self,
         query: str,
-        expected_title: Optional[str] = None,
-        expected_artist: Optional[str] = None,
-        expected_album: Optional[str] = None,
-        expected_duration: Optional[float] = None,
+        expected_title: str | None = None,
+        expected_artist: str | None = None,
+        expected_album: str | None = None,
+        expected_duration: float | None = None,
         min_score: float = 40.0,
-    ) -> List[tuple[float, TrackMetadata]]:
+    ) -> list[tuple[float, TrackMetadata]]:
         clean_title = normalize_search_string(expected_title or query)
         raw_artist = expected_artist or ""
         primary_artist = extract_primary_artist(raw_artist) or raw_artist
@@ -55,9 +54,14 @@ class MetadataMatcher:
         clean_artist = normalize_search_string(raw_artist)
         clean_album = normalize_search_string(expected_album or "")
 
-        queries: List[str] = []
+        queries: list[str] = []
         # 1. Primary artist + Album + Title (Highest priority when album context is known)
-        if clean_primary and clean_album and clean_title and clean_album.lower() not in ["single", "unknown"]:
+        if (
+            clean_primary
+            and clean_album
+            and clean_title
+            and clean_album.lower() not in ["single", "unknown"]
+        ):
             queries.append(f"{clean_primary} {clean_album} {clean_title}")
         # 2. Primary artist + Title (Multi-artist collaborations)
         if clean_primary and clean_title:
@@ -72,7 +76,7 @@ class MetadataMatcher:
         if clean_title and clean_title not in queries:
             queries.append(clean_title)
 
-        candidates: List[TrackMetadata] = []
+        candidates: list[TrackMetadata] = []
         for q in queries:
             if not q.strip():
                 continue
@@ -85,7 +89,7 @@ class MetadataMatcher:
             return []
 
         # Score candidates strictly
-        scored_candidates: List[tuple[float, TrackMetadata]] = []
+        scored_candidates: list[tuple[float, TrackMetadata]] = []
         for cand in candidates:
             score = self._compute_similarity_score(
                 cand, clean_title, clean_artist, clean_primary, clean_album, expected_duration
@@ -99,11 +103,11 @@ class MetadataMatcher:
     def find_best_match(
         self,
         query: str,
-        expected_title: Optional[str] = None,
-        expected_artist: Optional[str] = None,
-        expected_album: Optional[str] = None,
-        expected_duration: Optional[float] = None,
-    ) -> Optional[TrackMetadata]:
+        expected_title: str | None = None,
+        expected_artist: str | None = None,
+        expected_album: str | None = None,
+        expected_duration: float | None = None,
+    ) -> TrackMetadata | None:
         ranked = self.get_ranked_candidates(
             query=query,
             expected_title=expected_title,
@@ -130,7 +134,7 @@ class MetadataMatcher:
         clean_artist: str,
         primary_artist: str,
         clean_album: str,
-        expected_duration: Optional[float],
+        expected_duration: float | None,
     ) -> float:
         cand_title = normalize_search_string(meta.title)
         cand_artist = normalize_search_string(meta.artist)
@@ -163,10 +167,14 @@ class MetadataMatcher:
             artist_scores = []
             if primary_artist:
                 artist_scores.append(fuzz.ratio(primary_artist.lower(), cand_artist.lower()))
-                artist_scores.append(fuzz.token_set_ratio(primary_artist.lower(), cand_artist.lower()))
+                artist_scores.append(
+                    fuzz.token_set_ratio(primary_artist.lower(), cand_artist.lower())
+                )
             if clean_artist:
                 artist_scores.append(fuzz.ratio(clean_artist.lower(), cand_artist.lower()))
-                artist_scores.append(fuzz.token_set_ratio(clean_artist.lower(), cand_artist.lower()))
+                artist_scores.append(
+                    fuzz.token_set_ratio(clean_artist.lower(), cand_artist.lower())
+                )
 
             best_artist_score = max(artist_scores) if artist_scores else 0.0
 
@@ -175,7 +183,12 @@ class MetadataMatcher:
                 return 0.0
 
             # For short titles, require high title ratio unless artist is exact match
-            if clean_title and len(clean_title) <= 6 and best_artist_score < 80 and title_ratio < 75:
+            if (
+                clean_title
+                and len(clean_title) <= 6
+                and best_artist_score < 80
+                and title_ratio < 75
+            ):
                 return 0.0
         else:
             best_artist_score = 70.0
@@ -215,7 +228,7 @@ class MetadataMatcher:
 
         return max(0.0, score)
 
-    def _download_cover(self, url: str) -> Optional[bytes]:
+    def _download_cover(self, url: str) -> bytes | None:
         try:
             resp = requests.get(url, timeout=10)
             if resp.status_code == 200:

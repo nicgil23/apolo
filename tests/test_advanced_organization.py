@@ -1,7 +1,6 @@
-
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
-from apolo.metadata.models import TrackMetadata
 from apolo.library.organizer import LibraryOrganizer
+from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import ProcessingPipeline
 from apolo.utils import (
     extract_disc_info,
@@ -198,6 +197,7 @@ def test_multi_disc_disc1_with_existing_disc2_folder(tmp_path):
 
 def test_unicode_search_normalization():
     from apolo.utils import normalize_search_string
+
     text = "முன்னுதாரணம் (feat. Treb & tiyu)"
     cleaned = normalize_search_string(text)
     assert "முன்னுதாரணம்" in cleaned
@@ -206,6 +206,7 @@ def test_unicode_search_normalization():
 
 def test_matcher_prefers_album_over_single():
     from apolo.metadata.matcher import MetadataMatcher
+
     matcher = MetadataMatcher()
     clean_title = "tiny windows"
     clean_artist = "Tanger"
@@ -312,6 +313,3 @@ def test_accent_and_symbol_insensitive_artist_resolution(tmp_path):
     )
     dest_cro = organizer.get_destination_path(meta_cro)
     assert dest_cro.parent.parent == cro_dir
-
-
-

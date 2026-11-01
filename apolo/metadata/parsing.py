@@ -1,5 +1,4 @@
 import re
-from typing import Optional, Tuple
 
 COMPOUND_ARTISTS = {
     "ac/dc",
@@ -75,7 +74,7 @@ COMPOUND_ARTISTS = {
 }
 
 
-def clean_track_title(raw_title: str) -> Tuple[str, Optional[str]]:
+def clean_track_title(raw_title: str) -> tuple[str, str | None]:
     """
     Attempt to extract (title, artist) or cleaned title from video titles like:
     - 'Artist - Song Title (Official Music Video)' -> ('Song Title', 'Artist')
@@ -109,14 +108,16 @@ def _split_sub_artists(text: str) -> list[str]:
     if clean_text.lower() in COMPOUND_ARTISTS:
         return [clean_text]
     split_pattern = r"(?:,\s*|\s*;\s*|\s+&\s+|\s+and\s+|\s+x\s+|\s+vs\.?\s+|\s+/\s+)"
-    parts = [p.strip() for p in re.split(split_pattern, clean_text, flags=re.IGNORECASE) if p.strip()]
+    parts = [
+        p.strip() for p in re.split(split_pattern, clean_text, flags=re.IGNORECASE) if p.strip()
+    ]
     return parts
 
 
 def parse_artists(
-    raw_artist: Optional[str],
-    title: Optional[str] = None,
-) -> Tuple[list[str], list[str], list[str], str]:
+    raw_artist: str | None,
+    title: str | None = None,
+) -> tuple[list[str], list[str], list[str], str]:
     """
     Parses an artist string and optional title to separate main artists from featured/guest artists.
     Returns:
@@ -140,9 +141,15 @@ def parse_artists(
     if raw_artist_clean.lower() in COMPOUND_ARTISTS:
         main_artists = [raw_artist_clean]
         featured_artists = [f for f in featured_from_title if f.lower() != raw_artist_clean.lower()]
-        all_artists = [raw_artist_clean] + [f for f in featured_artists if f not in [raw_artist_clean]]
+        all_artists = [raw_artist_clean] + [
+            f for f in featured_artists if f not in [raw_artist_clean]
+        ]
         if featured_artists:
-            feat_str = " & ".join(featured_artists) if len(featured_artists) <= 2 else ", ".join(featured_artists)
+            feat_str = (
+                " & ".join(featured_artists)
+                if len(featured_artists) <= 2
+                else ", ".join(featured_artists)
+            )
             display_str = f"{raw_artist_clean} feat. {feat_str}"
         else:
             display_str = raw_artist_clean
@@ -181,18 +188,24 @@ def parse_artists(
         display_str = raw_artist_clean or "Unknown Artist"
     elif featured_artists:
         main_str = " & ".join(main_artists) if len(main_artists) <= 2 else ", ".join(main_artists)
-        feat_str = " & ".join(featured_artists) if len(featured_artists) <= 2 else ", ".join(featured_artists)
+        feat_str = (
+            " & ".join(featured_artists)
+            if len(featured_artists) <= 2
+            else ", ".join(featured_artists)
+        )
         if main_str:
             display_str = f"{main_str} feat. {feat_str}"
         else:
             display_str = feat_str
     else:
-        display_str = raw_artist_clean or (" & ".join(main_artists) if len(main_artists) <= 2 else ", ".join(main_artists))
+        display_str = raw_artist_clean or (
+            " & ".join(main_artists) if len(main_artists) <= 2 else ", ".join(main_artists)
+        )
 
     return main_artists, featured_artists, all_artists, display_str
 
 
-def extract_primary_artist(artist_str: Optional[str]) -> Optional[str]:
+def extract_primary_artist(artist_str: str | None) -> str | None:
     """Extract first main artist before commas, feat, ft., vs, x."""
     if not artist_str:
         return None
@@ -204,7 +217,7 @@ def extract_primary_artist(artist_str: Optional[str]) -> Optional[str]:
     return artist_str.strip()
 
 
-def extract_disc_info(text: Optional[str]) -> Tuple[str, Optional[int]]:
+def extract_disc_info(text: str | None) -> tuple[str, int | None]:
     """
     Extracts disc number if present in album/title string, e.g.
     'The Wall (Disc 2)' -> ('The Wall', 2)

@@ -1,7 +1,9 @@
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+
 from rich.console import Console
 
 from apolo.config import ApoloConfig, load_config
@@ -10,13 +12,13 @@ from apolo.pipeline import ProcessingPipeline
 
 
 class InboxWatcher:
-    def __init__(self, config: Optional[ApoloConfig] = None):
+    def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
         self.pipeline = ProcessingPipeline(self.config)
         self.inbox_dir = self.config.directories.inbox_dir
 
     @staticmethod
-    def send_desktop_notification(title: str, message: str, icon_path: Optional[Path] = None) -> None:
+    def send_desktop_notification(title: str, message: str, icon_path: Path | None = None) -> None:
         """Sends a Linux desktop notification using notify-send if available."""
         cmd = ["notify-send", "-a", "Apolo", title, message]
         if icon_path and icon_path.exists():
@@ -29,9 +31,9 @@ class InboxWatcher:
     def scan_and_process_stable_files(
         self,
         watch_dir: Path,
-        file_size_cache: Dict[Path, int],
-        on_event: Optional[Callable[[str, str], None]] = None,
-    ) -> List[Tuple[Path, Optional[Path], Any]]:
+        file_size_cache: dict[Path, int],
+        on_event: Callable[[str, str], None] | None = None,
+    ) -> list[tuple[Path, Path | None, Any]]:
         """
         Scans watch_dir, checks file size stability across polls to debounce active writes,
         and processes stabilized audio files.
@@ -39,7 +41,9 @@ class InboxWatcher:
         if not watch_dir.exists():
             return []
 
-        candidates = [p for p in watch_dir.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+        candidates = [
+            p for p in watch_dir.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+        ]
         current_paths = set(candidates)
         processed_results = []
 
@@ -83,25 +87,30 @@ class InboxWatcher:
 
     def run_watch_loop(
         self,
-        watch_dir: Optional[Path] = None,
+        watch_dir: Path | None = None,
         poll_interval: float = 2.0,
         once: bool = False,
-        console: Optional[Console] = None,
+        console: Console | None = None,
     ) -> None:
         target_dir = watch_dir or self.inbox_dir
         target_dir.mkdir(parents=True, exist_ok=True)
-        file_size_cache: Dict[Path, int] = {}
+        file_size_cache: dict[Path, int] = {}
 
         if console:
-            console.print(f"[bold green]Apolo Watcher active:[/bold green] Monitoring [cyan]{target_dir}[/cyan] (Press Ctrl+C to stop)")
+            console.print(
+                f"[bold green]Apolo Watcher active:[/bold green] Monitoring [cyan]{target_dir}[/cyan] (Press Ctrl+C to stop)"
+            )
 
         try:
             while True:
+
                 def event_callback(step: str, msg: str):
                     if console:
                         console.print(f"[bold cyan][{step.upper()}][/bold cyan] {msg}")
 
-                self.scan_and_process_stable_files(target_dir, file_size_cache, on_event=event_callback)
+                self.scan_and_process_stable_files(
+                    target_dir, file_size_cache, on_event=event_callback
+                )
 
                 if once:
                     break

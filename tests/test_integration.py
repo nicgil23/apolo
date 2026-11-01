@@ -1,8 +1,9 @@
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
-from PIL import Image
+
 from mutagen.oggopus import OggOpus
+from PIL import Image
 
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.metadata.models import TrackMetadata
@@ -31,6 +32,7 @@ def create_dummy_opus(output_path: Path):
 def create_dummy_cover_bytes() -> bytes:
     img = Image.new("RGB", (300, 300), color="blue")
     import io
+
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     return buf.getvalue()
@@ -79,9 +81,7 @@ def test_tagging_and_reading_metadata(tmp_path):
 def test_process_file_pipeline(tmp_path):
     library_dir = tmp_path / "Music"
     temp_dir = tmp_path / "temp"
-    config = ApoloConfig(
-        directories=DirectoriesConfig(library_dir=library_dir, temp_dir=temp_dir)
-    )
+    config = ApoloConfig(directories=DirectoriesConfig(library_dir=library_dir, temp_dir=temp_dir))
     pipeline = ProcessingPipeline(config)
 
     input_opus = tmp_path / "Daft Punk - Get Lucky.opus"
@@ -114,7 +114,9 @@ def test_inbox_preserves_sidecar_lrc(tmp_path):
         d.mkdir(parents=True, exist_ok=True)
 
     config = ApoloConfig(
-        directories=DirectoriesConfig(inbox_dir=inbox_dir, library_dir=library_dir, temp_dir=temp_dir)
+        directories=DirectoriesConfig(
+            inbox_dir=inbox_dir, library_dir=library_dir, temp_dir=temp_dir
+        )
     )
     pipeline = ProcessingPipeline(config)
 
@@ -156,7 +158,9 @@ def test_inbox_embeds_and_cleans_folder_images(tmp_path):
         d.mkdir(parents=True, exist_ok=True)
 
     config = ApoloConfig(
-        directories=DirectoriesConfig(inbox_dir=inbox_dir, library_dir=library_dir, temp_dir=temp_dir)
+        directories=DirectoriesConfig(
+            inbox_dir=inbox_dir, library_dir=library_dir, temp_dir=temp_dir
+        )
     )
     pipeline = ProcessingPipeline(config)
 
@@ -193,4 +197,3 @@ def test_inbox_embeds_and_cleans_folder_images(tmp_path):
     # Verify cover file was deleted and folder was removed
     assert not cover_file.exists()
     assert not album_dir.exists()
-

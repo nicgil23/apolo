@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Optional
 
 METADATOS_BIBLIOTECA = [
     "title",
@@ -22,22 +21,22 @@ METADATOS_BIBLIOTECA = [
 class TrackMetadata:
     title: str
     artist: str
-    album_artist: Optional[str] = None
-    album: Optional[str] = None
-    track_number: Optional[int] = None
-    track_total: Optional[int] = None
-    date: Optional[str] = None  # e.g., "2023" or "2023-05-18"
-    genre: Optional[str] = None
-    disc_number: Optional[int] = None
-    disc_total: Optional[int] = None
-    compilation: Optional[bool] = False
-    cover_art_url: Optional[str] = None
-    cover_art_data: Optional[bytes] = None
-    synced_lyrics: Optional[str] = None
-    duration: Optional[float] = None
-    provider_source: Optional[str] = None
-    source_id: Optional[str] = None
-    origin: Optional[str] = None
+    album_artist: str | None = None
+    album: str | None = None
+    track_number: int | None = None
+    track_total: int | None = None
+    date: str | None = None  # e.g., "2023" or "2023-05-18"
+    genre: str | None = None
+    disc_number: int | None = None
+    disc_total: int | None = None
+    compilation: bool | None = False
+    cover_art_url: str | None = None
+    cover_art_data: bytes | None = None
+    synced_lyrics: str | None = None
+    duration: float | None = None
+    provider_source: str | None = None
+    source_id: str | None = None
+    origin: str | None = None
     artists: list[str] = field(default_factory=list)
     main_artists: list[str] = field(default_factory=list)
     featured_artists: list[str] = field(default_factory=list)
@@ -47,6 +46,7 @@ class TrackMetadata:
 
     def __post_init__(self):
         from apolo.utils import parse_artists
+
         if not self.artists and not self.main_artists:
             if self.artist:
                 m, f, a, _ = parse_artists(self.artist, self.title)
@@ -54,7 +54,9 @@ class TrackMetadata:
                 self.featured_artists = f
                 self.artists = a
         elif self.main_artists and not self.artists:
-            self.artists = list(self.main_artists) + [f for f in self.featured_artists if f not in self.main_artists]
+            self.artists = list(self.main_artists) + [
+                f for f in self.featured_artists if f not in self.main_artists
+            ]
 
         if not self.album_artists and self.album_artist:
             self.album_artists = [self.album_artist]
@@ -68,12 +70,14 @@ class TrackMetadata:
                 self.album = "Single"
 
         from apolo.utils import is_single_release
+
         if self.track_number is None and is_single_release(self.album, self.track_total):
             self.track_number = 1
             if self.track_total is None:
                 self.track_total = 1
 
         from apolo.metadata.genres import clean_genre
+
         self.genre = clean_genre(self.genre, self.artist or self.album_artist)
 
     def get_album_artist_or_artist(self) -> str:
@@ -87,6 +91,7 @@ class TrackMetadata:
         if not self.date:
             return "Unknown Year"
         import re
+
         match = re.search(r"\b(19\d{2}|20\d{2})\b", str(self.date))
         if match:
             return match.group(1)
@@ -99,7 +104,8 @@ class TrackMetadata:
             "artists": self.artists,
             "main_artists": self.main_artists,
             "featured_artists": self.featured_artists,
-            "album_artist": self.album_artist or (self.main_artists[0] if self.main_artists else self.artist),
+            "album_artist": self.album_artist
+            or (self.main_artists[0] if self.main_artists else self.artist),
             "album_artists": self.album_artists,
             "album": self.album or "Unknown Album",
             "track_number": self.track_number,
@@ -113,4 +119,3 @@ class TrackMetadata:
             "origin": self.origin,
             "extra_tags": self.extra_tags,
         }
-

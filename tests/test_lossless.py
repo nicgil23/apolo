@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+
 from mutagen.flac import FLAC
 
 from apolo.config import ApoloConfig, DirectoriesConfig, DownloaderConfig
@@ -67,7 +68,9 @@ def test_process_flac_with_preserve_lossless(tmp_path: Path, monkeypatch):
         d.mkdir(parents=True)
 
     config = ApoloConfig(
-        directories=DirectoriesConfig(library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir),
+        directories=DirectoriesConfig(
+            library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir
+        ),
         downloader=DownloaderConfig(preserve_lossless=True),
     )
 
@@ -111,7 +114,9 @@ def test_process_flac_without_preserve_lossless(tmp_path: Path, monkeypatch):
         d.mkdir(parents=True)
 
     config = ApoloConfig(
-        directories=DirectoriesConfig(library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir),
+        directories=DirectoriesConfig(
+            library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir
+        ),
         downloader=DownloaderConfig(preserve_lossless=False),
     )
 
@@ -145,7 +150,9 @@ def test_reorganize_paths_preserves_flac_extension(tmp_path: Path):
     library_dir.mkdir(parents=True)
 
     config = ApoloConfig(
-        directories=DirectoriesConfig(library_dir=library_dir, inbox_dir=tmp_path / "inbox", temp_dir=tmp_path / "temp"),
+        directories=DirectoriesConfig(
+            library_dir=library_dir, inbox_dir=tmp_path / "inbox", temp_dir=tmp_path / "temp"
+        ),
     )
 
     # Place a FLAC file in wrong directory

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional
+
 import typer
 
 from apolo.cli.ui import console, display_track_summary, make_cli_candidate_selector
@@ -11,11 +11,11 @@ def register(app: typer.Typer) -> None:
     @app.command(name="process")
     @app.command(name="tag", hidden=True)
     def process_cmd(
-        paths: List[Path] = typer.Argument(
+        paths: list[Path] = typer.Argument(
             ...,
             help="Path to audio/video file(s) or directories (e.g. Soulseek downloads, FLAC albums, MP3s, MP4s)",
         ),
-        origin: Optional[str] = typer.Option(
+        origin: str | None = typer.Option(
             None,
             "--origin",
             "-o",
@@ -59,9 +59,16 @@ def register(app: typer.Typer) -> None:
 
             prefix = "[bold yellow][DRY-RUN][/bold yellow] " if dry_run else ""
             if path.is_dir():
-                console.print(f"\n{prefix}[bold magenta]Scanning directory (recursive):[/bold magenta] {path}")
-                status_msg = "[bold yellow]Simulating directory scan...[/bold yellow]" if dry_run else "[bold cyan]Processing audio files...[/bold cyan]"
+                console.print(
+                    f"\n{prefix}[bold magenta]Scanning directory (recursive):[/bold magenta] {path}"
+                )
+                status_msg = (
+                    "[bold yellow]Simulating directory scan...[/bold yellow]"
+                    if dry_run
+                    else "[bold cyan]Processing audio files...[/bold cyan]"
+                )
                 with console.status(status_msg) as status:
+
                     def update_status(step: str, msg: str):
                         status.update(f"[bold cyan]{msg}[/bold cyan]")
 
@@ -75,13 +82,22 @@ def register(app: typer.Typer) -> None:
                         on_progress=update_status,
                     )
                     if not results:
-                        console.print(f"[yellow]No supported audio/video files found in:[/yellow] {path}")
+                        console.print(
+                            f"[yellow]No supported audio/video files found in:[/yellow] {path}"
+                        )
                     for dest_audio, dest_lrc, meta in results:
                         display_track_summary(dest_audio, dest_lrc, meta, dry_run=dry_run)
             else:
-                console.print(f"\n{prefix}[bold magenta]Processing file:[/bold magenta] {path.name}")
-                status_msg = "[bold yellow]Simulating file processing...[/bold yellow]" if dry_run else "[bold cyan]Processing audio file...[/bold cyan]"
+                console.print(
+                    f"\n{prefix}[bold magenta]Processing file:[/bold magenta] {path.name}"
+                )
+                status_msg = (
+                    "[bold yellow]Simulating file processing...[/bold yellow]"
+                    if dry_run
+                    else "[bold cyan]Processing audio file...[/bold cyan]"
+                )
                 with console.status(status_msg) as status:
+
                     def update_status(step: str, msg: str):
                         status.update(f"[bold cyan]{msg}[/bold cyan]")
 
@@ -98,11 +114,13 @@ def register(app: typer.Typer) -> None:
                         dest_audio, dest_lrc, meta = res
                         display_track_summary(dest_audio, dest_lrc, meta, dry_run=dry_run)
                     else:
-                        console.print(f"[bold yellow]Skipped or unsupported file:[/bold yellow] {path}")
+                        console.print(
+                            f"[bold yellow]Skipped or unsupported file:[/bold yellow] {path}"
+                        )
 
     @app.command(name="inbox")
     def inbox_cmd(
-        origin: Optional[str] = typer.Option(
+        origin: str | None = typer.Option(
             None,
             "--origin",
             "-o",
@@ -140,17 +158,26 @@ def register(app: typer.Typer) -> None:
         if not inbox_dir.exists():
             if not dry_run:
                 inbox_dir.mkdir(parents=True, exist_ok=True)
-                console.print(f"[bold yellow]Inbox directory was empty/created at {inbox_dir}[/bold yellow]")
+                console.print(
+                    f"[bold yellow]Inbox directory was empty/created at {inbox_dir}[/bold yellow]"
+                )
             else:
-                console.print(f"[bold yellow][DRY-RUN] Inbox directory does not exist yet at {inbox_dir}[/bold yellow]")
+                console.print(
+                    f"[bold yellow][DRY-RUN] Inbox directory does not exist yet at {inbox_dir}[/bold yellow]"
+                )
             return
 
         pipeline = ProcessingPipeline(config)
         selector = make_cli_candidate_selector(pipeline.matcher, console) if interactive else None
         prefix = "[bold yellow][DRY-RUN][/bold yellow] " if dry_run else ""
         console.print(f"\n{prefix}[bold magenta]Processing Inbox:[/bold magenta] {inbox_dir}")
-        status_msg = "[bold yellow]Simulating inbox audio files...[/bold yellow]" if dry_run else "[bold cyan]Processing inbox audio files...[/bold cyan]"
+        status_msg = (
+            "[bold yellow]Simulating inbox audio files...[/bold yellow]"
+            if dry_run
+            else "[bold cyan]Processing inbox audio files...[/bold cyan]"
+        )
         with console.status(status_msg) as status:
+
             def update_status(step: str, msg: str):
                 status.update(f"[bold cyan]{msg}[/bold cyan]")
 

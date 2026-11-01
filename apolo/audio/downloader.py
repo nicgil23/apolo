@@ -1,8 +1,10 @@
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+
 import yt_dlp
 
 from apolo.config import ApoloConfig, load_config
@@ -16,26 +18,26 @@ MAX_DOWNLOAD_RETRIES = 3
 class DownloadedTrackInfo:
     file_path: Path
     title: str
-    artist: Optional[str] = None
-    album_artist: Optional[str] = None
-    album: Optional[str] = None
-    track_number: Optional[int] = None
-    track_total: Optional[int] = None
-    release_date: Optional[str] = None
-    duration: Optional[float] = None
-    thumbnail_url: Optional[str] = None
-    origin: Optional[str] = None
-    subtrack_id: Optional[str] = None
+    artist: str | None = None
+    album_artist: str | None = None
+    album: str | None = None
+    track_number: int | None = None
+    track_total: int | None = None
+    release_date: str | None = None
+    duration: float | None = None
+    thumbnail_url: str | None = None
+    origin: str | None = None
+    subtrack_id: str | None = None
 
 
 class AudioDownloader:
-    def __init__(self, config: Optional[ApoloConfig] = None):
+    def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
         self.temp_dir = self.config.directories.temp_dir
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def _wait_delay(seconds: float, cancel_check: Optional[Callable[[], bool]] = None) -> None:
+    def _wait_delay(seconds: float, cancel_check: Callable[[], bool] | None = None) -> None:
         """Sleeps for specified seconds while periodically checking for cancellation."""
         start = time.time()
         while time.time() - start < seconds:
@@ -48,10 +50,10 @@ class AudioDownloader:
         entry: dict,
         expected_file: Path,
         idx: int,
-        total_entries: Optional[int],
-        cleaned_playlist_album: Optional[str],
-        inferred_origin: Optional[str],
-        subtrack_id: Optional[str] = None,
+        total_entries: int | None,
+        cleaned_playlist_album: str | None,
+        inferred_origin: str | None,
+        subtrack_id: str | None = None,
     ) -> DownloadedTrackInfo:
         raw_title = entry.get("title", "")
         raw_track = entry.get("track")
@@ -63,8 +65,10 @@ class AudioDownloader:
         thumbnail = entry.get("thumbnail")
 
         # Track and disc numbering
-        track_num = entry.get("track_number") or entry.get("playlist_index") or (
-            idx if total_entries and total_entries > 1 else None
+        track_num = (
+            entry.get("track_number")
+            or entry.get("playlist_index")
+            or (idx if total_entries and total_entries > 1 else None)
         )
         track_total = entry.get("n_entries") or total_entries
 
@@ -112,22 +116,24 @@ class AudioDownloader:
     def download_url(
         self,
         url: str,
-        origin: Optional[str] = None,
-        suggested_title: Optional[str] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        cancel_check: Optional[Callable[[], bool]] = None,
-        on_playlist_init: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None,
-        on_subtrack_status: Optional[Callable[[str, str, Optional[str], int, Optional[float]], None]] = None,
-        on_subtrack_progress: Optional[Callable[[str, float, str], None]] = None,
-        on_active_track: Optional[Callable[[int, int, str, Optional[str], float, str], None]] = None,
-        on_track_title: Optional[Callable[[str], None]] = None,
-    ) -> List[DownloadedTrackInfo]:
+        origin: str | None = None,
+        suggested_title: str | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+        on_playlist_init: Callable[[str, int, list[dict[str, Any]]], None] | None = None,
+        on_subtrack_status: Callable[[str, str, str | None, int, float | None], None] | None = None,
+        on_subtrack_progress: Callable[[str, float, str], None] | None = None,
+        on_active_track: Callable[[int, int, str, str | None, float, str], None] | None = None,
+        on_track_title: Callable[[str], None] | None = None,
+    ) -> list[DownloadedTrackInfo]:
         """
         Downloads URL using yt-dlp to best quality audio (.opus).
         Supports playlist decomposition with subtrack progress and automatic 10-second retries on failure.
         """
         clean_url = clean_media_url(url)
-        is_explicit_playlist = ("/playlist" in clean_url and "list=" in clean_url) or ("list=OLAK5uy_" in clean_url)
+        is_explicit_playlist = ("/playlist" in clean_url and "list=" in clean_url) or (
+            "list=OLAK5uy_" in clean_url
+        )
 
         # Normalize music.youtube.com playlist/album to standard youtube.com playlist to avoid yt-dlp extractor issues
         fetch_url = clean_url
@@ -135,7 +141,7 @@ class AudioDownloader:
             fetch_url = fetch_url.replace("music.youtube.com", "www.youtube.com")
 
         # First, attempt flat extraction to inspect if it's a playlist or album
-        extract_opts: Dict[str, Any] = {
+        extract_opts: dict[str, Any] = {
             "extract_flat": "in_playlist",
             "quiet": True,
             "no_warnings": True,
@@ -175,28 +181,32 @@ class AudioDownloader:
                     r"^(Album|EP|Single|Playlist)\s*-\s*", "", playlist_title, flags=re.IGNORECASE
                 ).strip()
 
-            display_title = cleaned_playlist_album or playlist_title or suggested_title or "Playlist"
+            display_title = (
+                cleaned_playlist_album or playlist_title or suggested_title or "Playlist"
+            )
             total_tracks = len(raw_entries)
 
             # Build subtrack metadata structures
-            subtracks_data: List[Dict[str, Any]] = []
+            subtracks_data: list[dict[str, Any]] = []
             for idx, entry in enumerate(raw_entries, 1):
                 sub_id = entry.get("id") or f"track_{idx}"
                 raw_t = entry.get("title") or f"Track {idx}"
                 raw_a = entry.get("artist") or entry.get("uploader") or entry.get("channel") or ""
                 cl_title, cl_artist = clean_track_title(raw_t)
-                subtracks_data.append({
-                    "id": sub_id,
-                    "title": cl_title or raw_t,
-                    "artist": cl_artist or raw_a,
-                    "status": "queued",
-                    "progress": 0.0,
-                    "progress_text": "En cola",
-                    "track_number": idx,
-                    "error": None,
-                    "retry_count": 0,
-                    "next_retry_at": None,
-                })
+                subtracks_data.append(
+                    {
+                        "id": sub_id,
+                        "title": cl_title or raw_t,
+                        "artist": cl_artist or raw_a,
+                        "status": "queued",
+                        "progress": 0.0,
+                        "progress_text": "En cola",
+                        "track_number": idx,
+                        "error": None,
+                        "retry_count": 0,
+                        "next_retry_at": None,
+                    }
+                )
 
             if on_playlist_init:
                 on_playlist_init(display_title, total_tracks, subtracks_data)
@@ -211,7 +221,7 @@ class AudioDownloader:
                 else:
                     inferred_origin = "download"
 
-            results: List[DownloadedTrackInfo] = []
+            results: list[DownloadedTrackInfo] = []
             completed_count = 0
             failed_count = 0
 
@@ -221,7 +231,9 @@ class AudioDownloader:
                     raise RuntimeError("Download cancelled by user")
 
                 video_id = entry.get("id")
-                entry_url = entry.get("url") or (f"https://www.youtube.com/watch?v={video_id}" if video_id else None)
+                entry_url = entry.get("url") or (
+                    f"https://www.youtube.com/watch?v={video_id}" if video_id else None
+                )
                 if not entry_url and video_id:
                     entry_url = video_id
                 if not entry_url:
@@ -256,7 +268,9 @@ class AudioDownloader:
                             on_subtrack_progress(sub_id, pct, f"{pct}%")
 
                         if on_active_track:
-                            on_active_track(idx, total_tracks, sub_title, sub_artist, pct, f"{pct}%")
+                            on_active_track(
+                                idx, total_tracks, sub_title, sub_artist, pct, f"{pct}%"
+                            )
 
                         if progress_callback:
                             overall_pct = round(
@@ -267,7 +281,7 @@ class AudioDownloader:
                                 f"{completed_count}/{total_tracks} ({overall_pct}%)",
                             )
 
-                single_ydl_opts: Dict[str, Any] = {
+                single_ydl_opts: dict[str, Any] = {
                     "format": "bestaudio/best",
                     "postprocessors": [
                         {
@@ -296,7 +310,9 @@ class AudioDownloader:
                             full_info = single_ydl.extract_info(entry_url, download=True)
 
                         vid_id = (full_info.get("id") if full_info else None) or video_id
-                        expected_file = self.temp_dir / f"{vid_id}.{self.config.downloader.audio_format}"
+                        expected_file = (
+                            self.temp_dir / f"{vid_id}.{self.config.downloader.audio_format}"
+                        )
 
                         if expected_file.exists():
                             item_info = full_info or entry
@@ -316,7 +332,9 @@ class AudioDownloader:
                                 on_subtrack_status(sub_id, "completed", None, attempt, None)
 
                             if on_active_track:
-                                on_active_track(idx, total_tracks, sub_title, sub_artist, 100.0, "Listo")
+                                on_active_track(
+                                    idx, total_tracks, sub_title, sub_artist, 100.0, "Listo"
+                                )
 
                             if progress_callback:
                                 overall_pct = round((completed_count / total_tracks) * 100.0, 1)
@@ -326,7 +344,9 @@ class AudioDownloader:
                                 )
                             break
                         else:
-                            raise FileNotFoundError(f"Downloaded audio file not found: {expected_file}")
+                            raise FileNotFoundError(
+                                f"Downloaded audio file not found: {expected_file}"
+                            )
 
                     except Exception as e:
                         if cancel_check and cancel_check():
@@ -348,7 +368,11 @@ class AudioDownloader:
                             failed_count += 1
                             if on_subtrack_status:
                                 on_subtrack_status(
-                                    sub_id, "failed", f"Error tras reintentos: {err_msg}", attempt + 1, None
+                                    sub_id,
+                                    "failed",
+                                    f"Error tras reintentos: {err_msg}",
+                                    attempt + 1,
+                                    None,
                                 )
 
             return results
@@ -370,7 +394,7 @@ class AudioDownloader:
                     val = float(clean_pct) if clean_pct else 50.0
                     progress_callback(val, percent_str)
 
-        ydl_opts: Dict[str, Any] = {
+        ydl_opts: dict[str, Any] = {
             "format": "bestaudio/best",
             "postprocessors": [
                 {
@@ -394,7 +418,7 @@ class AudioDownloader:
                 raise RuntimeError("Download cancelled by user")
 
             try:
-                results: List[DownloadedTrackInfo] = []
+                results: list[DownloadedTrackInfo] = []
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(clean_url, download=True)
                     if not info:
@@ -433,7 +457,9 @@ class AudioDownloader:
                         if not entry:
                             continue
                         video_id = entry.get("id")
-                        expected_file = self.temp_dir / f"{video_id}.{self.config.downloader.audio_format}"
+                        expected_file = (
+                            self.temp_dir / f"{video_id}.{self.config.downloader.audio_format}"
+                        )
                         if expected_file.exists():
                             results.append(
                                 self._parse_entry_to_track_info(
@@ -458,11 +484,12 @@ class AudioDownloader:
 
                 if attempt < MAX_DOWNLOAD_RETRIES:
                     if progress_callback:
-                        progress_callback(0.0, f"Error. Reintentando en 10s (intento {attempt + 1}/{MAX_DOWNLOAD_RETRIES})...")
+                        progress_callback(
+                            0.0,
+                            f"Error. Reintentando en 10s (intento {attempt + 1}/{MAX_DOWNLOAD_RETRIES})...",
+                        )
                     self._wait_delay(RETRY_DELAY_SECONDS, cancel_check=cancel_check)
                 else:
                     raise last_error
 
         return []
-
-

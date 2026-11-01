@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+
 import typer
 
 from apolo.cli.ui import console
@@ -11,7 +11,7 @@ def register(app: typer.Typer) -> None:
     @app.command(name="info")
     @app.command(name="inspect", hidden=True)
     def info_cmd(
-        paths: List[Path] = typer.Argument(
+        paths: list[Path] = typer.Argument(
             ...,
             help="Path to audio/video file(s) or directories to inspect metadata, origin, cover art, and lyrics",
         ),
@@ -21,7 +21,11 @@ def register(app: typer.Typer) -> None:
             if path.is_file():
                 inspect_track(path, console=console)
             elif path.is_dir():
-                files = [p for p in path.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+                files = [
+                    p
+                    for p in path.rglob("*")
+                    if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+                ]
                 if not files:
                     console.print(f"[yellow]No supported audio files in {path}[/yellow]")
                 for f in sorted(files):

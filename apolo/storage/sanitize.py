@@ -1,9 +1,8 @@
 import re
 import unicodedata
-from typing import Optional
 
 
-def strip_accents(text: Optional[str]) -> str:
+def strip_accents(text: str | None) -> str:
     """Removes diacritics / accent marks from text, returning ASCII-equivalent base characters."""
     if not text:
         return ""
@@ -11,7 +10,7 @@ def strip_accents(text: Optional[str]) -> str:
     return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
 
 
-def normalize_dir_key(text: Optional[str]) -> str:
+def normalize_dir_key(text: str | None) -> str:
     """
     Normalizes a directory name for comparison by removing diacritics/accents,
     special symbols, and excess whitespace, lowercased.
@@ -25,21 +24,21 @@ def normalize_dir_key(text: Optional[str]) -> str:
 
 
 UNICODE_FS_REPLACEMENTS = {
-    "/": "／",   # Fullwidth solidus \uFF0F
+    "/": "／",  # Fullwidth solidus \uFF0F
     "\\": "＼",  # Fullwidth reverse solidus \uFF3C
-    ":": "：",   # Fullwidth colon \uFF1A
-    "*": "＊",   # Fullwidth asterisk \uFF0A
-    "?": "？",   # Fullwidth question mark \uFF1F
-    '"': "”",   # Right double quotation mark \u201D
-    "<": "＜",   # Fullwidth less-than sign \uFF1C
-    ">": "＞",   # Fullwidth greater-than sign \uFF1E
-    "|": "｜",   # Fullwidth vertical line \uFF5C
+    ":": "：",  # Fullwidth colon \uFF1A
+    "*": "＊",  # Fullwidth asterisk \uFF0A
+    "?": "？",  # Fullwidth question mark \uFF1F
+    '"': "”",  # Right double quotation mark \u201D
+    "<": "＜",  # Fullwidth less-than sign \uFF1C
+    ">": "＞",  # Fullwidth greater-than sign \uFF1E
+    "|": "｜",  # Fullwidth vertical line \uFF5C
 }
 
 
 def sanitize_filename(
     name: str,
-    replace_char: Optional[str] = None,
+    replace_char: str | None = None,
     max_chars: int = 180,
     use_unicode: bool = True,
 ) -> str:

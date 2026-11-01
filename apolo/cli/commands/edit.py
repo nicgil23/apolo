@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+
 import typer
 from rich.table import Table
 
@@ -14,27 +14,53 @@ from apolo.tagging.tagger import AudioTagger
 def register(app: typer.Typer) -> None:
     @app.command(name="set")
     def set_cmd(
-        paths: List[Path] = typer.Argument(
+        paths: list[Path] = typer.Argument(
             ...,
             help="Path to audio file(s) or directories to update tags",
         ),
-        title: Optional[str] = typer.Option(None, "--title", "-t", help="Track title"),
-        artist: Optional[str] = typer.Option(None, "--artist", "-a", help="Artist name"),
-        album_artist: Optional[str] = typer.Option(None, "--album-artist", "-A", help="Album artist name"),
-        album: Optional[str] = typer.Option(None, "--album", "-b", help="Album name"),
-        track_number: Optional[int] = typer.Option(None, "--track", "-n", help="Track number"),
-        track_total: Optional[int] = typer.Option(None, "--track-total", "-N", help="Total track count"),
-        disc_number: Optional[int] = typer.Option(None, "--disc", "-d", help="Disc number"),
-        disc_total: Optional[int] = typer.Option(None, "--disc-total", "-D", help="Total disc count"),
-        date: Optional[str] = typer.Option(None, "--year", "--date", "-y", help="Release year or date (YYYY or YYYY-MM-DD)"),
-        genre: Optional[str] = typer.Option(None, "--genre", "-g", help="Music genre"),
-        origin: Optional[str] = typer.Option(None, "--origin", "-o", help="Origin / source identifier"),
-        compilation: Optional[bool] = typer.Option(None, "--compilation", "-c", help="Mark as compilation (true/false)"),
-        controlled_anomaly: Optional[bool] = typer.Option(None, "--control / --no-control", "--controlled-anomaly / --no-controlled-anomaly", help="Mark or unmark track as controlled intentional partial album"),
-        lyrics: Optional[str] = typer.Option(None, "--lyrics", "-l", help="Lyrics text or path to .lrc / .txt file"),
-        cover: Optional[Path] = typer.Option(None, "--cover", help="Path to cover art image file to embed"),
-        reorganize: bool = typer.Option(False, "--reorganize", "-r", help="Automatically relocate files according to updated metadata"),
-        dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview tag changes without writing to disk"),
+        title: str | None = typer.Option(None, "--title", "-t", help="Track title"),
+        artist: str | None = typer.Option(None, "--artist", "-a", help="Artist name"),
+        album_artist: str | None = typer.Option(
+            None, "--album-artist", "-A", help="Album artist name"
+        ),
+        album: str | None = typer.Option(None, "--album", "-b", help="Album name"),
+        track_number: int | None = typer.Option(None, "--track", "-n", help="Track number"),
+        track_total: int | None = typer.Option(
+            None, "--track-total", "-N", help="Total track count"
+        ),
+        disc_number: int | None = typer.Option(None, "--disc", "-d", help="Disc number"),
+        disc_total: int | None = typer.Option(None, "--disc-total", "-D", help="Total disc count"),
+        date: str | None = typer.Option(
+            None, "--year", "--date", "-y", help="Release year or date (YYYY or YYYY-MM-DD)"
+        ),
+        genre: str | None = typer.Option(None, "--genre", "-g", help="Music genre"),
+        origin: str | None = typer.Option(
+            None, "--origin", "-o", help="Origin / source identifier"
+        ),
+        compilation: bool | None = typer.Option(
+            None, "--compilation", "-c", help="Mark as compilation (true/false)"
+        ),
+        controlled_anomaly: bool | None = typer.Option(
+            None,
+            "--control / --no-control",
+            "--controlled-anomaly / --no-controlled-anomaly",
+            help="Mark or unmark track as controlled intentional partial album",
+        ),
+        lyrics: str | None = typer.Option(
+            None, "--lyrics", "-l", help="Lyrics text or path to .lrc / .txt file"
+        ),
+        cover: Path | None = typer.Option(
+            None, "--cover", help="Path to cover art image file to embed"
+        ),
+        reorganize: bool = typer.Option(
+            False,
+            "--reorganize",
+            "-r",
+            help="Automatically relocate files according to updated metadata",
+        ),
+        dry_run: bool = typer.Option(
+            False, "--dry-run", "-n", help="Preview tag changes without writing to disk"
+        ),
     ):
         """[bold green]Set Track Metadata[/bold green]: Modify specific metadata tags, lyrics, or cover art on audio files without wiping other tags."""
         # Validate cover art file
@@ -88,11 +114,13 @@ def register(app: typer.Typer) -> None:
             updates["lyrics"] = lyrics_content
 
         if not updates and not cover_bytes:
-            console.print("[yellow]No tags or cover art specified to update. Use --help to view available options.[/yellow]")
+            console.print(
+                "[yellow]No tags or cover art specified to update. Use --help to view available options.[/yellow]"
+            )
             return
 
         # Find target files
-        target_files: List[Path] = []
+        target_files: list[Path] = []
         for p in paths:
             if not p.exists():
                 console.print(f"[bold red]Path does not exist:[/bold red] {p}")
@@ -101,7 +129,13 @@ def register(app: typer.Typer) -> None:
                 if p.suffix.lower() in AUDIO_EXTENSIONS:
                     target_files.append(p)
             elif p.is_dir():
-                target_files.extend([f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS])
+                target_files.extend(
+                    [
+                        f
+                        for f in p.rglob("*")
+                        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+                    ]
+                )
 
         target_files = sorted(list(set(target_files)))
         if not target_files:
@@ -113,8 +147,16 @@ def register(app: typer.Typer) -> None:
 
         for file_path in target_files:
             info = pipeline.extract_file_info(file_path)
-            table_title = f"[bold yellow]Set Tags (DRY-RUN): {file_path.name}[/bold yellow]" if dry_run else f"Set Tags: {file_path.name}"
-            table = Table(title=table_title, show_header=True, header_style="bold yellow" if dry_run else "bold cyan")
+            table_title = (
+                f"[bold yellow]Set Tags (DRY-RUN): {file_path.name}[/bold yellow]"
+                if dry_run
+                else f"Set Tags: {file_path.name}"
+            )
+            table = Table(
+                title=table_title,
+                show_header=True,
+                header_style="bold yellow" if dry_run else "bold cyan",
+            )
             table.add_column("Tag", style="bold yellow")
             table.add_column("Current Value", style="dim")
             table.add_column("New Value", style="yellow" if dry_run else "green")
@@ -124,7 +166,11 @@ def register(app: typer.Typer) -> None:
                 table.add_row(k, curr_val, str(v))
 
             if cover_bytes:
-                table.add_row("cover_art", "Embedded" if info.get("cover_art_data") else "None", f"Embedded ({len(cover_bytes)} bytes)")
+                table.add_row(
+                    "cover_art",
+                    "Embedded" if info.get("cover_art_data") else "None",
+                    f"Embedded ({len(cover_bytes)} bytes)",
+                )
 
             console.print(table)
 
@@ -135,7 +181,11 @@ def register(app: typer.Typer) -> None:
             console.print("\n[bold magenta]Reorganizing updated tracks...[/bold magenta]")
             moved = pipeline.reorganize_paths(target_files, dry_run=dry_run)
             if moved:
-                title_text = f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]" if dry_run else f"Reorganized Tracks ({len(moved)} moved)"
+                title_text = (
+                    f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]"
+                    if dry_run
+                    else f"Reorganized Tracks ({len(moved)} moved)"
+                )
                 header_style = "bold yellow" if dry_run else "bold cyan"
                 rtable = Table(title=title_text, show_header=True, header_style=header_style)
                 rtable.add_column("Original Location", style="dim")
@@ -146,50 +196,57 @@ def register(app: typer.Typer) -> None:
 
     @app.command(name="edit")
     def edit_cmd(
-        paths: List[Path] = typer.Argument(
+        paths: list[Path] = typer.Argument(
             ...,
             help="Path to audio file(s) or directories to batch edit",
         ),
-        replace_title: Optional[Tuple[str, str]] = typer.Option(
+        replace_title: tuple[str, str] | None = typer.Option(
             None,
             "--replace-title",
             help="Replace substring in title: --replace-title OLD NEW",
         ),
-        replace_artist: Optional[Tuple[str, str]] = typer.Option(
+        replace_artist: tuple[str, str] | None = typer.Option(
             None,
             "--replace-artist",
             help="Replace substring in artist: --replace-artist OLD NEW",
         ),
-        replace_album: Optional[Tuple[str, str]] = typer.Option(
+        replace_album: tuple[str, str] | None = typer.Option(
             None,
             "--replace-album",
             help="Replace substring in album: --replace-album OLD NEW",
         ),
-        replace_genre: Optional[Tuple[str, str]] = typer.Option(
+        replace_genre: tuple[str, str] | None = typer.Option(
             None,
             "--replace-genre",
             help="Replace substring in genre: --replace-genre OLD NEW",
         ),
-        regex_title: Optional[Tuple[str, str]] = typer.Option(
+        regex_title: tuple[str, str] | None = typer.Option(
             None,
             "--regex-title",
             help="Regex replace in title: --regex-title PATTERN REPLACEMENT",
         ),
-        regex_artist: Optional[Tuple[str, str]] = typer.Option(
+        regex_artist: tuple[str, str] | None = typer.Option(
             None,
             "--regex-artist",
             help="Regex replace in artist: --regex-artist PATTERN REPLACEMENT",
         ),
-        regex_album: Optional[Tuple[str, str]] = typer.Option(
+        regex_album: tuple[str, str] | None = typer.Option(
             None,
             "--regex-album",
             help="Regex replace in album: --regex-album PATTERN REPLACEMENT",
         ),
-        reorganize: bool = typer.Option(False, "--reorganize", "-r", help="Automatically relocate files if artist or album changes"),
-        dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview regex replacements without writing to disk"),
+        reorganize: bool = typer.Option(
+            False,
+            "--reorganize",
+            "-r",
+            help="Automatically relocate files if artist or album changes",
+        ),
+        dry_run: bool = typer.Option(
+            False, "--dry-run", "-n", help="Preview regex replacements without writing to disk"
+        ),
     ):
         """[bold green]Batch Edit Metadata[/bold green]: Find and replace text or regex patterns in metadata tags across tracks."""
-        target_files: List[Path] = []
+        target_files: list[Path] = []
         for p in paths:
             if not p.exists():
                 console.print(f"[bold red]Path does not exist:[/bold red] {p}")
@@ -198,7 +255,13 @@ def register(app: typer.Typer) -> None:
                 if p.suffix.lower() in AUDIO_EXTENSIONS:
                     target_files.append(p)
             elif p.is_dir():
-                target_files.extend([f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS])
+                target_files.extend(
+                    [
+                        f
+                        for f in p.rglob("*")
+                        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+                    ]
+                )
 
         target_files = sorted(list(set(target_files)))
         if not target_files:
@@ -260,8 +323,16 @@ def register(app: typer.Typer) -> None:
 
             if updates:
                 modified_count += 1
-                table_title = f"[bold yellow]Edit Tags (DRY-RUN): {file_path.name}[/bold yellow]" if dry_run else f"Edit Tags: {file_path.name}"
-                table = Table(title=table_title, show_header=True, header_style="bold yellow" if dry_run else "bold cyan")
+                table_title = (
+                    f"[bold yellow]Edit Tags (DRY-RUN): {file_path.name}[/bold yellow]"
+                    if dry_run
+                    else f"Edit Tags: {file_path.name}"
+                )
+                table = Table(
+                    title=table_title,
+                    show_header=True,
+                    header_style="bold yellow" if dry_run else "bold cyan",
+                )
                 table.add_column("Tag", style="bold yellow")
                 table.add_column("Original Value", style="dim")
                 table.add_column("New Value", style="yellow" if dry_run else "green")
@@ -282,7 +353,11 @@ def register(app: typer.Typer) -> None:
             console.print("\n[bold magenta]Reorganizing updated tracks...[/bold magenta]")
             moved = pipeline.reorganize_paths(target_files, dry_run=dry_run)
             if moved:
-                title_text = f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]" if dry_run else f"Reorganized Tracks ({len(moved)} moved)"
+                title_text = (
+                    f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]"
+                    if dry_run
+                    else f"Reorganized Tracks ({len(moved)} moved)"
+                )
                 header_style = "bold yellow" if dry_run else "bold cyan"
                 rtable = Table(title=title_text, show_header=True, header_style=header_style)
                 rtable.add_column("Original Location", style="dim")

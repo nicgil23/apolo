@@ -1,19 +1,31 @@
 import subprocess
 from pathlib import Path
+
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.library.doctor import LibraryDoctor
-from apolo.metadata.models import TrackMetadata
 from apolo.library.organizer import LibraryOrganizer
+from apolo.metadata.models import TrackMetadata
 from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus(output_path: Path, title="Song", artist="Artist", album="Album", date="2024"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-        "-t", "1", "-c:a", "libopus", "-b:a", "128k", str(output_path)
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=48000:cl=stereo",
+        "-t",
+        "1",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "128k",
+        str(output_path),
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     f = OggOpus(output_path)
@@ -47,7 +59,9 @@ def test_organizer_routes_singles_to_singles_dir(tmp_path):
     config = ApoloConfig(directories=DirectoriesConfig(library_dir=library_dir))
     organizer = LibraryOrganizer(config)
 
-    meta = TrackMetadata(title="Mood Swing", artist="tn-shi", album="Mood Swing - Single", date="2024-07-20")
+    meta = TrackMetadata(
+        title="Mood Swing", artist="tn-shi", album="Mood Swing - Single", date="2024-07-20"
+    )
     dest = organizer.get_destination_path(meta)
     assert dest == library_dir / "tn-shi" / "Singles" / "Mood Swing (2024).opus"
 
@@ -68,7 +82,9 @@ def test_tagger_writes_single_album_tag(tmp_path):
 def test_doctor_ignores_singles_for_incomplete_albums(tmp_path):
     library_dir = tmp_path / "Library"
     song_path = library_dir / "tn-shi" / "Singles" / "Mood Swing (2024).opus"
-    create_dummy_opus(song_path, title="Mood Swing", artist="tn-shi", album="Mood Swing - Single", date="2024")
+    create_dummy_opus(
+        song_path, title="Mood Swing", artist="tn-shi", album="Mood Swing - Single", date="2024"
+    )
 
     config = ApoloConfig(directories=DirectoriesConfig(library_dir=library_dir))
     doctor = LibraryDoctor(config)

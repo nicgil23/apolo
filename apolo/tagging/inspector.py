@@ -1,6 +1,7 @@
 import base64
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 import mutagen
 from mutagen.flac import Picture
 from rich.console import Console
@@ -10,7 +11,7 @@ from rich.table import Table
 from apolo.utils import format_duration
 
 
-def get_first_tag(tags: Any, keys: list[str]) -> Optional[str]:
+def get_first_tag(tags: Any, keys: list[str]) -> str | None:
     if not tags:
         return None
     for k in keys:
@@ -66,7 +67,7 @@ def get_all_tags(tags: Any, keys: list[str]) -> list[str]:
     return results
 
 
-def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
+def inspect_track(file_path: Path, console: Console | None = None) -> None:
     if console is None:
         console = Console()
 
@@ -112,7 +113,11 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     # Metadata fields
     title = get_first_tag(tags, ["TITLE", "title", "TIT2"]) or "-"
     artist_tag_list = get_all_tags(tags, ["ARTIST", "artist", "TPE1"])
-    artist = ", ".join(artist_tag_list) if artist_tag_list else (get_first_tag(tags, ["ARTIST", "artist", "TPE1"]) or "-")
+    artist = (
+        ", ".join(artist_tag_list)
+        if artist_tag_list
+        else (get_first_tag(tags, ["ARTIST", "artist", "TPE1"]) or "-")
+    )
     album_artist = get_first_tag(tags, ["ALBUMARTIST", "albumartist", "TPE2"]) or "-"
     album = get_first_tag(tags, ["ALBUM", "album", "TALB"]) or "-"
     track_num = get_first_tag(tags, ["TRACKNUMBER", "tracknumber", "TRCK"]) or "-"
@@ -122,14 +127,21 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     date = get_first_tag(tags, ["DATE", "date", "TDRC", "TYER"]) or "-"
     genre = get_first_tag(tags, ["GENRE", "genre", "TCON"]) or "-"
     compilation = get_first_tag(tags, ["COMPILATION", "compilation", "TCMP"]) or "-"
-    origin = get_first_tag(tags, ["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"]) or "-"
+    origin = (
+        get_first_tag(tags, ["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"]) or "-"
+    )
 
     # Multi-artist breakdown
     from apolo.utils import parse_artists
+
     main_tagged = get_all_tags(tags, ["MAIN_ARTIST", "main_artist", "ARTIST_MAIN", "artist_main"])
-    feat_tagged = get_all_tags(tags, ["FEATURED_ARTIST", "featured_artist", "ARTIST_FEATURED", "artist_featured"])
+    feat_tagged = get_all_tags(
+        tags, ["FEATURED_ARTIST", "featured_artist", "ARTIST_FEATURED", "artist_featured"]
+    )
     composers = get_all_tags(tags, ["COMPOSER", "composer", "TCOM"])
-    lyricists = get_all_tags(tags, ["LYRICIST", "lyricist", "TEXT", "WRITER", "writer", "AUTHOR", "author"])
+    lyricists = get_all_tags(
+        tags, ["LYRICIST", "lyricist", "TEXT", "WRITER", "writer", "AUTHOR", "author"]
+    )
 
     if not main_tagged and not feat_tagged and artist != "-":
         m, f, a, _ = parse_artists(artist, title)
@@ -167,28 +179,40 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
                 raw_b64 = tags["METADATA_BLOCK_PICTURE"][0]
                 pic_bytes = base64.b64decode(raw_b64)
                 pic = Picture(pic_bytes)
-                cover_info = f"Embedded ({pic.mime}, {pic.width}x{pic.height}, {len(pic.data)//1024} KB)"
+                cover_info = (
+                    f"Embedded ({pic.mime}, {pic.width}x{pic.height}, {len(pic.data) // 1024} KB)"
+                )
             except Exception:
                 cover_info = "Embedded (Vorbis Picture Block)"
         elif hasattr(audio, "pictures") and audio.pictures:
             pic = audio.pictures[0]
-            cover_info = f"Embedded ({pic.mime}, {pic.width}x{pic.height}, {len(pic.data)//1024} KB)"
+            cover_info = (
+                f"Embedded ({pic.mime}, {pic.width}x{pic.height}, {len(pic.data) // 1024} KB)"
+            )
         elif hasattr(tags, "getall") and tags.getall("APIC"):
             apic = tags.getall("APIC")[0]
-            cover_info = f"Embedded ID3 APIC ({apic.mime}, {len(apic.data)//1024} KB)"
+            cover_info = f"Embedded ID3 APIC ({apic.mime}, {len(apic.data) // 1024} KB)"
         elif hasattr(tags, "__contains__") and "covr" in tags and tags["covr"]:
             cover_info = "Embedded MP4 Cover"
     except Exception:
         pass
 
     # Main Metadata Table
-    table = Table(title=f"Metadata Inspector: {file_path.name}", show_header=True, header_style="bold cyan")
+    table = Table(
+        title=f"Metadata Inspector: {file_path.name}", show_header=True, header_style="bold cyan"
+    )
     table.add_column("Property", style="bold yellow", width=18)
     table.add_column("Value", style="white")
 
     table.add_row("File Path", str(file_path))
-    table.add_row("Format / Codec", f"{file_path.suffix.upper().lstrip('.')} ({audio.mime[0] if getattr(audio, 'mime', None) else 'Audio'})")
-    table.add_row("Audio Specs", f"Duration: {duration_str} | Bitrate: {bitrate} | Sample Rate: {sample_rate} | Channels: {channels} | Size: {file_size}")
+    table.add_row(
+        "Format / Codec",
+        f"{file_path.suffix.upper().lstrip('.')} ({audio.mime[0] if getattr(audio, 'mime', None) else 'Audio'})",
+    )
+    table.add_row(
+        "Audio Specs",
+        f"Duration: {duration_str} | Bitrate: {bitrate} | Sample Rate: {sample_rate} | Channels: {channels} | Size: {file_size}",
+    )
     table.add_section()
     table.add_row("Title", title)
     table.add_row("Artist", artist)
@@ -214,12 +238,13 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     table.add_row("Cover Art", cover_info)
     table.add_row("Lyrics", lyrics_display)
 
-
     console.print()
     console.print(table)
 
     # Show preview of lyrics if present
-    preview_lyrics = lyrics_raw or (sidecar_lrc.read_text(encoding="utf-8", errors="ignore") if has_sidecar_lrc else None)
+    preview_lyrics = lyrics_raw or (
+        sidecar_lrc.read_text(encoding="utf-8", errors="ignore") if has_sidecar_lrc else None
+    )
     if preview_lyrics:
         lines = [line.strip() for line in preview_lyrics.splitlines() if line.strip()][:8]
         preview_text = "\n".join(lines)

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+
 import typer
 from rich.table import Table
 
@@ -18,7 +18,7 @@ def register(app: typer.Typer) -> None:
 
     @cover_app.command(name="extract")
     def cover_extract_cmd(
-        paths: List[Path] = typer.Argument(
+        paths: list[Path] = typer.Argument(
             ...,
             help="Audio file(s) or directories to extract cover art from",
         ),
@@ -36,12 +36,20 @@ def register(app: typer.Typer) -> None:
         ),
     ):
         """[bold green]Extract Cover Art[/bold green]: Save embedded cover art as cover.jpg / folder.jpg in each album directory for media servers."""
-        extracted = CoverManager.extract_covers(paths, target_filename=filename, overwrite=overwrite)
+        extracted = CoverManager.extract_covers(
+            paths, target_filename=filename, overwrite=overwrite
+        )
         if not extracted:
-            console.print("[yellow]No embedded covers extracted (already exist or not found).[/yellow]")
+            console.print(
+                "[yellow]No embedded covers extracted (already exist or not found).[/yellow]"
+            )
             return
 
-        table = Table(title=f"Extracted Cover Art ({len(extracted)} saved)", show_header=True, header_style="bold cyan")
+        table = Table(
+            title=f"Extracted Cover Art ({len(extracted)} saved)",
+            show_header=True,
+            header_style="bold cyan",
+        )
         table.add_column("Source Track", style="dim")
         table.add_column("Extracted Image", style="green")
         for src, out_img in extracted:
@@ -50,7 +58,7 @@ def register(app: typer.Typer) -> None:
 
     @cover_app.command(name="set")
     def cover_set_cmd(
-        paths: List[Path] = typer.Argument(
+        paths: list[Path] = typer.Argument(
             ...,
             help="Audio file(s) or directories to update with new cover art",
         ),
@@ -62,7 +70,9 @@ def register(app: typer.Typer) -> None:
         """[bold green]Set Album Cover[/bold green]: Embed an optimized 1:1 square cover art image into all audio tracks in a directory."""
         try:
             updated = CoverManager.set_album_cover(paths, image)
-            console.print(f"[bold green]Successfully embedded cover art into {updated} tracks.[/bold green]")
+            console.print(
+                f"[bold green]Successfully embedded cover art into {updated} tracks.[/bold green]"
+            )
         except Exception as e:
             console.print(f"[bold red]Error embedding cover art:[/bold red] {e}")
             raise typer.Exit(code=1)

@@ -1,11 +1,12 @@
 from pathlib import Path
+
 from mutagen.flac import FLAC
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
-from apolo.metadata.models import TrackMetadata
-from apolo.metadata.matcher import MetadataMatcher
 from apolo.library.organizer import LibraryOrganizer
+from apolo.metadata.matcher import MetadataMatcher
+from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import ProcessingPipeline
 from apolo.tagging.tagger import AudioTagger
 from apolo.utils import (
@@ -48,7 +49,9 @@ def test_soundtrack_single_composer_vs_various_artists(tmp_path: Path):
     organizer = LibraryOrganizer(config)
 
     # Solo composer soundtrack -> should go to Hans Zimmer directory, NOT Various Artists
-    assert not is_compilation_album("Interstellar (Original Motion Picture Soundtrack)", "Hans Zimmer")
+    assert not is_compilation_album(
+        "Interstellar (Original Motion Picture Soundtrack)", "Hans Zimmer"
+    )
     meta_zimmer = TrackMetadata(
         title="Cornfield Chase",
         artist="Hans Zimmer",
@@ -124,15 +127,31 @@ def test_multi_disc_compilation_filename_when_no_folders(tmp_path: Path):
 def test_album_consensus_different_artists_same_album_name():
     # If Queen and Blink-182 both have "Greatest Hits" processed in the same folder, they must not cross-contaminate
     queen_tracks = [
-        (Path(f"/tmp/q{i}.opus"), None, TrackMetadata(title=f"Song {i}", artist="Queen", album_artist="Queen", album="Greatest Hits"))
+        (
+            Path(f"/tmp/q{i}.opus"),
+            None,
+            TrackMetadata(
+                title=f"Song {i}", artist="Queen", album_artist="Queen", album="Greatest Hits"
+            ),
+        )
         for i in range(1, 8)
     ]
     blink_tracks = [
-        (Path(f"/tmp/b{i}.opus"), None, TrackMetadata(title=f"Blink Song {i}", artist="Blink-182", album_artist="Blink-182", album="Greatest Hits"))
+        (
+            Path(f"/tmp/b{i}.opus"),
+            None,
+            TrackMetadata(
+                title=f"Blink Song {i}",
+                artist="Blink-182",
+                album_artist="Blink-182",
+                album="Greatest Hits",
+            ),
+        )
         for i in range(1, 4)
     ]
 
     from apolo.utils import infer_consensus_album_artist
+
     # Verify consensus on blink tracks alone returns Blink-182
     assert infer_consensus_album_artist([t[2] for t in blink_tracks]) == "Blink-182"
     assert infer_consensus_album_artist([t[2] for t in queen_tracks]) == "Queen"
@@ -142,7 +161,7 @@ def test_tagger_update_tags_flac(tmp_path: Path):
     flac_file = tmp_path / "test.flac"
     # Create minimal flac file
     flac_file.write_bytes(
-        b"fLaC\x00\x00\x00\"\x12\x00\x12\x00\x00\x00\x00\x00\x00\x00\x0b\xb8\x01\xf0\x00\x00\x00\x00"
+        b'fLaC\x00\x00\x00"\x12\x00\x12\x00\x00\x00\x00\x00\x00\x00\x0b\xb8\x01\xf0\x00\x00\x00\x00'
         b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x84\x00\x00\x00"
     )
     try:
@@ -152,7 +171,9 @@ def test_tagger_update_tags_flac(tmp_path: Path):
         pass
 
     if flac_file.exists():
-        AudioTagger.update_tags(flac_file, {"title": "Updated Title", "album_artist": "Updated Artist"})
+        AudioTagger.update_tags(
+            flac_file, {"title": "Updated Title", "album_artist": "Updated Artist"}
+        )
         try:
             audio = FLAC(flac_file)
             assert audio.get("TITLE") == ["Updated Title"]
@@ -163,10 +184,22 @@ def test_tagger_update_tags_flac(tmp_path: Path):
 
 def test_extra_tags_preservation(tmp_path: Path):
     import subprocess
+
     opus_file = tmp_path / "test_extra.opus"
     cmd = [
-        "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-        "-t", "1", "-c:a", "libopus", "-b:a", "128k", str(opus_file)
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=48000:cl=stereo",
+        "-t",
+        "1",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "128k",
+        str(opus_file),
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
@@ -174,7 +207,11 @@ def test_extra_tags_preservation(tmp_path: Path):
         title="Custom Song",
         artist="Custom Artist",
         album="Custom Album",
-        extra_tags={"COMPOSER": ["Ludwig van Beethoven"], "ISRC": ["US1234567890"], "LABEL": ["Deutsche Grammophon"]}
+        extra_tags={
+            "COMPOSER": ["Ludwig van Beethoven"],
+            "ISRC": ["US1234567890"],
+            "LABEL": ["Deutsche Grammophon"],
+        },
     )
 
     AudioTagger.tag_opus(opus_file, meta)
@@ -241,6 +278,7 @@ def test_skip_collision_strategy_does_not_delete_source(tmp_path: Path):
 
 def test_album_date_consensus(tmp_path: Path):
     from apolo.utils import infer_consensus_date
+
     tracks = [
         TrackMetadata(title="Track 1", artist="Artist", album="Album", date="2020-05-10"),
         TrackMetadata(title="Track 2", artist="Artist", album="Album", date="2020-05-10"),
@@ -262,9 +300,21 @@ def test_reorganize_paths_moves_companion_cover(tmp_path: Path):
     old_folder.mkdir(parents=True)
     audio_file = old_folder / "01 - CorrectSong.opus"
     import subprocess
+
     cmd = [
-        "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-        "-t", "1", "-c:a", "libopus", "-b:a", "128k", str(audio_file)
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=48000:cl=stereo",
+        "-t",
+        "1",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "128k",
+        str(audio_file),
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
@@ -292,6 +342,7 @@ def test_reorganize_paths_moves_companion_cover(tmp_path: Path):
 
 def test_symbol_only_track_title_matching_and_organization(tmp_path: Path):
     from apolo.utils import normalize_search_string
+
     # Symbol-only titles must preserve non-empty representation in normalize_search_string
     assert normalize_search_string("◠") == "◠"
     assert normalize_search_string("★") == "★"
@@ -320,5 +371,3 @@ def test_symbol_only_track_title_matching_and_organization(tmp_path: Path):
         expected_duration=None,
     )
     assert score_empty > 0.0
-
-

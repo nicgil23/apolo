@@ -1,13 +1,13 @@
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple
+
 import requests
 
 from apolo.config import ApoloConfig, load_config
 from apolo.metadata.models import TrackMetadata
+from apolo.system import SystemEnvironment
 
 ACOUSTID_API_URL = "https://api.acoustid.org/v2/lookup"
 DEFAULT_ACOUSTID_CLIENT_KEY = "8XaBELgH"  # Standard public application key for AcoustID queries
@@ -19,16 +19,16 @@ class AcousticFingerprinter:
     to identify untagged audio tracks by their actual audio waveform.
     """
 
-    def __init__(self, config: Optional[ApoloConfig] = None, api_key: Optional[str] = None):
+    def __init__(self, config: ApoloConfig | None = None, api_key: str | None = None):
         self.config = config or load_config()
         self.api_key = api_key or os.environ.get("ACOUSTID_API_KEY", DEFAULT_ACOUSTID_CLIENT_KEY)
 
     @staticmethod
     def is_fpcalc_available() -> bool:
         """Returns True if the 'fpcalc' command-line binary is installed and executable."""
-        return shutil.which("fpcalc") is not None
+        return SystemEnvironment.check_fpcalc()
 
-    def fingerprint_file(self, file_path: Path) -> Tuple[Optional[float], Optional[str]]:
+    def fingerprint_file(self, file_path: Path) -> tuple[float | None, str | None]:
         """
         Calculates the audio duration and Chromaprint fingerprint string for a local audio file.
         Returns: (duration_in_seconds, fingerprint_string) or (None, None) on failure.
@@ -53,7 +53,7 @@ class AcousticFingerprinter:
         except Exception:
             return None, None
 
-    def lookup_fingerprint(self, duration: float, fingerprint: str) -> List[TrackMetadata]:
+    def lookup_fingerprint(self, duration: float, fingerprint: str) -> list[TrackMetadata]:
         """
         Queries AcoustID API with duration and fingerprint, parsing matched recordings
         and release groups into structured TrackMetadata objects.
@@ -77,7 +77,7 @@ class AcousticFingerprinter:
             if data.get("status") != "ok":
                 return []
 
-            results: List[TrackMetadata] = []
+            results: list[TrackMetadata] = []
             seen_recordings = set()
 
             for res in data.get("results", []):
@@ -113,13 +113,21 @@ class AcousticFingerprinter:
                     if release_groups:
                         rg = release_groups[0]
                         album = rg.get("title")
-                        rg_artists = [a.get("name") for a in rg.get("artists", []) if isinstance(a, dict) and "name" in a]
+                        rg_artists = [
+                            a.get("name")
+                            for a in rg.get("artists", [])
+                            if isinstance(a, dict) and "name" in a
+                        ]
                         if rg_artists:
                             album_artist = ", ".join(rg_artists)
                         if "releases" in rg and rg["releases"]:
                             rel = rg["releases"][0]
                             if "date" in rel:
-                                release_date = str(rel["date"].get("year", "")) if isinstance(rel["date"], dict) else str(rel.get("date", ""))
+                                release_date = (
+                                    str(rel["date"].get("year", ""))
+                                    if isinstance(rel["date"], dict)
+                                    else str(rel.get("date", ""))
+                                )
                             if "mediums" in rel and rel["mediums"]:
                                 med = rel["mediums"][0]
                                 disc_number = med.get("position")
@@ -149,7 +157,7 @@ class AcousticFingerprinter:
         except Exception:
             return []
 
-    def identify_file(self, file_path: Path) -> Optional[TrackMetadata]:
+    def identify_file(self, file_path: Path) -> TrackMetadata | None:
         """
         End-to-end identification: generates acoustic fingerprint and queries AcoustID.
         Returns top matched TrackMetadata if found.

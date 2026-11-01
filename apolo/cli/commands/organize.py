@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional
+
 import typer
 from rich.table import Table
 
@@ -12,7 +12,7 @@ def register(app: typer.Typer) -> None:
     @app.command(name="reorganize")
     @app.command(name="tidy", hidden=True)
     def reorganize_cmd(
-        paths: Optional[List[Path]] = typer.Argument(
+        paths: list[Path] | None = typer.Argument(
             None,
             help="Path to audio file(s) or directories to reorganize (default: library_dir)",
         ),
@@ -34,8 +34,13 @@ def register(app: typer.Typer) -> None:
 
         prefix = "[bold yellow][DRY-RUN][/bold yellow] " if dry_run else ""
         console.print(f"\n{prefix}[bold magenta]Reorganizing:[/bold magenta] {target_desc}")
-        status_msg = "[bold yellow]Simulating path relocations...[/bold yellow]" if dry_run else "[bold cyan]Analyzing and relocating files...[/bold cyan]"
+        status_msg = (
+            "[bold yellow]Simulating path relocations...[/bold yellow]"
+            if dry_run
+            else "[bold cyan]Analyzing and relocating files...[/bold cyan]"
+        )
         with console.status(status_msg) as status:
+
             def update_status(step: str, msg: str):
                 status.update(f"[bold cyan]{msg}[/bold cyan]")
 
@@ -44,7 +49,11 @@ def register(app: typer.Typer) -> None:
         if not moved:
             console.print("[bold green]All files are already correctly organized.[/bold green]")
         else:
-            title_text = f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]" if dry_run else f"Reorganized Tracks ({len(moved)} moved)"
+            title_text = (
+                f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]"
+                if dry_run
+                else f"Reorganized Tracks ({len(moved)} moved)"
+            )
             header_style = "bold yellow" if dry_run else "bold cyan"
             table = Table(title=title_text, show_header=True, header_style=header_style)
             table.add_column("Original Location", style="dim")

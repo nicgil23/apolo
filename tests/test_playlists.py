@@ -1,11 +1,12 @@
 import subprocess
 from pathlib import Path
+
 from typer.testing import CliRunner
 
 from apolo.cli import app
 from apolo.config import ApoloConfig, DirectoriesConfig
-from apolo.metadata.models import TrackMetadata
 from apolo.library.playlists import PlaylistManager
+from apolo.metadata.models import TrackMetadata
 from apolo.tagging.tagger import AudioTagger
 
 
@@ -53,13 +54,29 @@ def test_playlist_smart_create_and_list(tmp_path):
 
     # Create several tracks with different genres and years
     t1 = library_dir / "Daft Punk" / "Discovery (2001)" / "01 - One More Time.opus"
-    create_dummy_opus(t1, title="One More Time", artist="Daft Punk", album="Discovery", date="2001", genre="French House")
+    create_dummy_opus(
+        t1,
+        title="One More Time",
+        artist="Daft Punk",
+        album="Discovery",
+        date="2001",
+        genre="French House",
+    )
 
     t2 = library_dir / "Kavinsky" / "OutRun (2013)" / "01 - Nightcall.opus"
-    create_dummy_opus(t2, title="Nightcall", artist="Kavinsky", album="OutRun", date="2013", genre="Synthwave")
+    create_dummy_opus(
+        t2, title="Nightcall", artist="Kavinsky", album="OutRun", date="2013", genre="Synthwave"
+    )
 
     t3 = library_dir / "Carpenter Brut" / "Trilogy (2015)" / "01 - Turbo Killer.opus"
-    create_dummy_opus(t3, title="Turbo Killer", artist="Carpenter Brut", album="Trilogy", date="2015", genre="Synthwave")
+    create_dummy_opus(
+        t3,
+        title="Turbo Killer",
+        artist="Carpenter Brut",
+        album="Trilogy",
+        date="2015",
+        genre="Synthwave",
+    )
 
     # Create smart playlist for Synthwave
     pl_path, count = pm.create_smart_playlist(name="Synthwave Hits", genre="Synthwave")

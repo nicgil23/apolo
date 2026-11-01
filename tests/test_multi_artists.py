@@ -1,11 +1,12 @@
 from pathlib import Path
+
 from mutagen.oggopus import OggOpus
 
+from apolo.config import ApoloConfig
+from apolo.library.organizer import LibraryOrganizer
 from apolo.metadata.models import TrackMetadata
 from apolo.tagging.tagger import AudioTagger
-from apolo.library.organizer import LibraryOrganizer
-from apolo.config import ApoloConfig
-from apolo.utils import parse_artists, extract_primary_artist
+from apolo.utils import extract_primary_artist, parse_artists
 
 
 def test_parse_artists_various_formats():
@@ -129,9 +130,11 @@ def test_organizer_uses_primary_artist(tmp_path: Path):
 
 
 def test_inspector_displays_all_artists(tmp_path: Path):
-    from apolo.tagging.inspector import inspect_track
-    from rich.console import Console
     import subprocess
+
+    from rich.console import Console
+
+    from apolo.tagging.inspector import inspect_track
 
     opus_file = tmp_path / "collaboration.opus"
     subprocess.run(
@@ -224,8 +227,9 @@ def test_single_routing_uses_primary_artist(tmp_path: Path):
 
 
 def test_doctor_detects_and_repairs_fragmented_folders(tmp_path: Path):
-    from apolo.library.doctor import LibraryDoctor
     import subprocess
+
+    from apolo.library.doctor import LibraryDoctor
 
     lib_dir = tmp_path / "Library"
     lib_dir.mkdir()
@@ -234,7 +238,17 @@ def test_doctor_detects_and_repairs_fragmented_folders(tmp_path: Path):
     base_dir.mkdir(parents=True)
     base_song = base_dir / "solo.opus"
     subprocess.run(
-        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=1000:duration=1", "-c:a", "libopus", str(base_song)],
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=1000:duration=1",
+            "-c:a",
+            "libopus",
+            str(base_song),
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=True,
@@ -245,12 +259,30 @@ def test_doctor_detects_and_repairs_fragmented_folders(tmp_path: Path):
     frag_dir.mkdir(parents=True)
     frag_song = frag_dir / "sola.opus"
     subprocess.run(
-        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=1000:duration=1", "-c:a", "libopus", str(frag_song)],
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=1000:duration=1",
+            "-c:a",
+            "libopus",
+            str(frag_song),
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=True,
     )
-    AudioTagger.tag_opus(frag_song, TrackMetadata(title="sola", artist="AKRIILA & Bb trickz", album_artist="AKRIILA & Bb trickz", album="Single"))
+    AudioTagger.tag_opus(
+        frag_song,
+        TrackMetadata(
+            title="sola",
+            artist="AKRIILA & Bb trickz",
+            album_artist="AKRIILA & Bb trickz",
+            album="Single",
+        ),
+    )
 
     config = ApoloConfig()
     config.directories.library_dir = lib_dir
@@ -267,5 +299,3 @@ def test_doctor_detects_and_repairs_fragmented_folders(tmp_path: Path):
     # Check that fragmented folder is deleted and song is moved to AKRIILA/Singles/
     assert not (lib_dir / "AKRIILA & Bb trickz").exists()
     assert (base_dir / "sola.opus").exists() or any((lib_dir / "AKRIILA").rglob("sola.opus"))
-
-

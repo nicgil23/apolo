@@ -1,9 +1,8 @@
 import re
 import unicodedata
-from typing import Dict, Optional
 
 # Canonical genre mapping from raw provider tags or multi-genre strings to normalized forms
-GENRE_MAPPING: Dict[str, str] = {
+GENRE_MAPPING: dict[str, str] = {
     # Trap & Hip-Hop / Rap
     "trap / hip-hop": "Trap",
     "trap / urbano latino": "Trap Latino",
@@ -20,7 +19,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "alternative rap": "Hip-Hop Alternativo",
     "alternative / hip-hop": "Hip-Hop Alternativo",
     "hip-hop alternativo": "Hip-Hop Alternativo",
-
     # J-Core, Hardcore & Speedcore
     "j-core / hardcore": "J-Core",
     "hardcore techno / j-core": "J-Core",
@@ -38,7 +36,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "hardcore": "Hardcore",
     "j-core": "J-Core",
     "speedcore": "Speedcore",
-
     # Electronic, Dance & Club subgenres
     "electronic": "Electronic",
     "electro": "Electro",
@@ -62,7 +59,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "synthwave": "Synthwave",
     "synth-pop": "Synthpop",
     "synthpop": "Synthpop",
-
     # Latin & Urbano
     "urbano latino": "Urbano Latino",
     "latino": "Latino",
@@ -81,7 +77,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "afrobeats": "Afrobeats",
     "música africana": "Afrobeats",
     "musica africana": "Afrobeats",
-
     # Pop & R&B
     "pop": "Pop",
     "alternative / pop": "Pop Alternativo",
@@ -91,7 +86,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "r&b / soul": "R&B / Soul",
     "contemporary r&b": "R&B",
     "r&b / hip-hop": "R&B",
-
     # Asian & Japanese subgenres
     "j-pop": "J-Pop",
     "j-rock": "J-Rock",
@@ -101,7 +95,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "shibuya-kei": "Shibuya-kei",
     "doujin": "Doujin",
     "anime": "Anime",
-
     # Rock, Metal & Alternative
     "alternative": "Alternativo",
     "alternativo": "Alternativo",
@@ -115,7 +108,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "indie rock": "Indie",
     "indie": "Indie",
     "country": "Country",
-
     # Soundtrack & Game
     "game": "Soundtrack",
     "game soundtrack": "Soundtrack",
@@ -127,7 +119,6 @@ GENRE_MAPPING: Dict[str, str] = {
     "peliculas/juegos": "Soundtrack",
     "banda sonora": "Soundtrack",
     "ost": "Soundtrack",
-
     # Other
     "jazz": "Jazz",
     "blues": "Blues",
@@ -140,7 +131,7 @@ GENRE_MAPPING: Dict[str, str] = {
 }
 
 # Heuristics for untagged underground / doujin / edit tracks not indexed in iTunes/Deezer
-FALLBACK_ARTIST_GENRES: Dict[str, str] = {
+FALLBACK_ARTIST_GENRES: dict[str, str] = {
     "laur": "J-Core",
     "team grimoire": "J-Core",
     "roughsketch": "Hardcore Techno",
@@ -172,7 +163,7 @@ def _strip_accents(text: str) -> str:
     return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
 
 
-def normalize_genre(genre_raw: Optional[str]) -> Optional[str]:
+def normalize_genre(genre_raw: str | None) -> str | None:
     """
     Normalizes a genre string against GENRE_MAPPING.
     Handles extra whitespace, case-insensitivity, accent-insensitivity, and slash separators.
@@ -181,7 +172,14 @@ def normalize_genre(genre_raw: Optional[str]) -> Optional[str]:
         return None
 
     cleaned = genre_raw.strip()
-    if not cleaned or cleaned.lower() in ("unknown", "unknown genre", "sin género", "<sin género>", "none", "-"):
+    if not cleaned or cleaned.lower() in (
+        "unknown",
+        "unknown genre",
+        "sin género",
+        "<sin género>",
+        "none",
+        "-",
+    ):
         return None
 
     lowered = cleaned.lower()
@@ -212,7 +210,7 @@ def normalize_genre(genre_raw: Optional[str]) -> Optional[str]:
     return cleaned.capitalize() if cleaned.islower() else cleaned
 
 
-def infer_genre_from_artist(artist: Optional[str]) -> Optional[str]:
+def infer_genre_from_artist(artist: str | None) -> str | None:
     """
     Infers genre based on known underground / indie artists.
     """
@@ -227,7 +225,7 @@ def infer_genre_from_artist(artist: Optional[str]) -> Optional[str]:
     return None
 
 
-def clean_genre(raw_genre: Optional[str], artist: Optional[str] = None) -> Optional[str]:
+def clean_genre(raw_genre: str | None, artist: str | None = None) -> str | None:
     """
     Canonical helper: Normalizes raw genre if provided, or infers from artist if missing.
     """

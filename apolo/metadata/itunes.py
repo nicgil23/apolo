@@ -1,5 +1,5 @@
 import re
-from typing import List
+
 import requests
 
 from apolo.metadata.models import TrackMetadata
@@ -11,7 +11,7 @@ class iTunesProvider:
     def __init__(self, timeout: int = 10):
         self.timeout = timeout
 
-    def search(self, query: str, limit: int = 5) -> List[TrackMetadata]:
+    def search(self, query: str, limit: int = 5) -> list[TrackMetadata]:
         try:
             params = {
                 "term": query,
@@ -23,7 +23,7 @@ class iTunesProvider:
                 return []
 
             data = resp.json()
-            results: List[TrackMetadata] = []
+            results: list[TrackMetadata] = []
 
             for item in data.get("results", []):
                 title = item.get("trackName")
@@ -53,7 +53,10 @@ class iTunesProvider:
                 duration = duration_ms / 1000.0 if duration_ms else None
 
                 from apolo.utils import parse_artists
-                main_artists, featured_artists, all_artists, formatted_artist = parse_artists(artist, title)
+
+                main_artists, featured_artists, all_artists, formatted_artist = parse_artists(
+                    artist, title
+                )
                 album_artist = main_artists[0] if main_artists else artist
 
                 track_meta = TrackMetadata(

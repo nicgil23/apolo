@@ -1,7 +1,7 @@
 import io
 import subprocess
 from pathlib import Path
-from typing import Optional
+
 from PIL import Image
 from typer.testing import CliRunner
 
@@ -19,8 +19,8 @@ def create_dummy_opus(
     album: str = "Album",
     track_number: int = 1,
     track_total: int = 10,
-    disc_number: Optional[int] = None,
-    disc_total: Optional[int] = None,
+    disc_number: int | None = None,
+    disc_total: int | None = None,
     date: str = "2024",
     genre: str = "Synthwave",
     has_cover: bool = True,
@@ -75,8 +75,22 @@ def test_doctor_scan_and_incomplete_albums(tmp_path):
 
     # Create an incomplete album (track total = 3, but tracks 1 and 3 are present, 2 is missing)
     alb_dir = library_dir / "Kavinsky" / "OutRun (2013)"
-    create_dummy_opus(alb_dir / "01 - Prelude.opus", title="Prelude", artist="Kavinsky", album="OutRun", track_number=1, track_total=3)
-    create_dummy_opus(alb_dir / "03 - Nightcall.opus", title="Nightcall", artist="Kavinsky", album="OutRun", track_number=3, track_total=3)
+    create_dummy_opus(
+        alb_dir / "01 - Prelude.opus",
+        title="Prelude",
+        artist="Kavinsky",
+        album="OutRun",
+        track_number=1,
+        track_total=3,
+    )
+    create_dummy_opus(
+        alb_dir / "03 - Nightcall.opus",
+        title="Nightcall",
+        artist="Kavinsky",
+        album="OutRun",
+        track_number=3,
+        track_total=3,
+    )
 
     report = doctor.scan_library(library_dir=library_dir)
     assert report.total_tracks == 2
@@ -94,8 +108,12 @@ def test_doctor_duplicates_detection(tmp_path):
     doctor = LibraryDoctor(config)
 
     # Create duplicate track in two different folders
-    create_dummy_opus(library_dir / "Artist" / "Album1" / "01 - Hit.opus", title="Hit Song", artist="Top Artist")
-    create_dummy_opus(library_dir / "Artist" / "Singles" / "Hit.opus", title="Hit Song", artist="Top Artist")
+    create_dummy_opus(
+        library_dir / "Artist" / "Album1" / "01 - Hit.opus", title="Hit Song", artist="Top Artist"
+    )
+    create_dummy_opus(
+        library_dir / "Artist" / "Singles" / "Hit.opus", title="Hit Song", artist="Top Artist"
+    )
 
     report = doctor.scan_library(library_dir=library_dir)
     assert len(report.duplicates) >= 1
@@ -123,7 +141,14 @@ def test_doctor_cli_command(tmp_path):
     runner = CliRunner()
     library_dir = tmp_path / "Music"
     alb_dir = library_dir / "Justice" / "Cross (2007)"
-    create_dummy_opus(alb_dir / "01 - Genesis.opus", title="Genesis", artist="Justice", album="Cross", track_number=1, track_total=2)
+    create_dummy_opus(
+        alb_dir / "01 - Genesis.opus",
+        title="Genesis",
+        artist="Justice",
+        album="Cross",
+        track_number=1,
+        track_total=2,
+    )
 
     result = runner.invoke(app, ["doctor", "--dir", str(library_dir)])
     assert result.exit_code == 0
@@ -170,11 +195,25 @@ def test_doctor_controlled_anomalies(tmp_path):
 
     # 1. Controlled incomplete album (Justice - Cross has 1/2 tracks, but matches controlled rule)
     alb_dir1 = library_dir / "Justice" / "Cross (2007)"
-    create_dummy_opus(alb_dir1 / "01 - Genesis.opus", title="Genesis", artist="Justice", album="Cross", track_number=1, track_total=2)
+    create_dummy_opus(
+        alb_dir1 / "01 - Genesis.opus",
+        title="Genesis",
+        artist="Justice",
+        album="Cross",
+        track_number=1,
+        track_total=2,
+    )
 
     # 2. Uncontrolled incomplete album (Daft Punk - Discovery has 1/2 tracks)
     alb_dir2 = library_dir / "Daft Punk" / "Discovery (2001)"
-    create_dummy_opus(alb_dir2 / "01 - One More Time.opus", title="One More Time", artist="Daft Punk", album="Discovery", track_number=1, track_total=2)
+    create_dummy_opus(
+        alb_dir2 / "01 - One More Time.opus",
+        title="One More Time",
+        artist="Daft Punk",
+        album="Discovery",
+        track_number=1,
+        track_total=2,
+    )
 
     report = doctor.scan_library(library_dir=library_dir)
     assert report.total_tracks == 2
@@ -197,10 +236,13 @@ def test_doctor_controlled_anomalies_tag(tmp_path):
     # Create incomplete album with controlled_anomaly vorbis tag
     alb_dir = library_dir / "C.R.O" / "Malos Cantores (2024)"
     p = alb_dir / "01 - Hit.opus"
-    create_dummy_opus(p, title="Hit", artist="C.R.O", album="Malos Cantores", track_number=1, track_total=10)
+    create_dummy_opus(
+        p, title="Hit", artist="C.R.O", album="Malos Cantores", track_number=1, track_total=10
+    )
 
     # Tag with CONTROLLED_ANOMALY
     from apolo.tagging.tagger import AudioTagger
+
     AudioTagger.update_tags(p, {"controlled_anomaly": True})
 
     report = doctor.scan_library(library_dir=library_dir)
@@ -214,6 +256,7 @@ def test_doctor_cli_control_command(tmp_path):
     runner = CliRunner()
 
     import os
+
     os.environ["XDG_CONFIG_HOME"] = str(tmp_path)
 
     # Add control rule
@@ -253,8 +296,11 @@ controlled_anomalies = ["Justice - Cross"]
 
     # Test saving controlled anomalies preserves show_controlled_anomalies
     from apolo.config import save_doctor_controlled_anomalies
-    save_doctor_controlled_anomalies(["Justice - Cross", "Daft Punk - Discovery"], config_path=cfg_file)
-    
+
+    save_doctor_controlled_anomalies(
+        ["Justice - Cross", "Daft Punk - Discovery"], config_path=cfg_file
+    )
+
     loaded_after = load_config(cfg_file)
     assert loaded_after.doctor.show_controlled_anomalies is False
     assert "Justice - Cross" in loaded_after.doctor.controlled_anomalies
@@ -264,6 +310,7 @@ controlled_anomalies = ["Justice - Cross"]
 def test_doctor_show_controlled_anomalies_cli(tmp_path):
     runner = CliRunner()
     import os
+
     os.environ["XDG_CONFIG_HOME"] = str(tmp_path)
 
     library_dir = tmp_path / "Music"
@@ -273,7 +320,14 @@ def test_doctor_show_controlled_anomalies_cli(tmp_path):
 
     # Create dummy album with controlled anomaly
     alb_dir = library_dir / "Justice" / "Cross (2007)"
-    create_dummy_opus(alb_dir / "01 - Genesis.opus", title="Genesis", artist="Justice", album="Cross", track_number=1, track_total=2)
+    create_dummy_opus(
+        alb_dir / "01 - Genesis.opus",
+        title="Genesis",
+        artist="Justice",
+        album="Cross",
+        track_number=1,
+        track_total=2,
+    )
 
     # 1. Default config (show_controlled_anomalies = true): table should appear
     cfg_file.write_text(
@@ -342,6 +396,7 @@ show_missing_lyrics = false
 def test_doctor_show_missing_lyrics_cli(tmp_path):
     runner = CliRunner()
     import os
+
     os.environ["XDG_CONFIG_HOME"] = str(tmp_path)
 
     library_dir = tmp_path / "Music"
@@ -351,7 +406,15 @@ def test_doctor_show_missing_lyrics_cli(tmp_path):
 
     # Create dummy album missing lyrics
     alb_dir = library_dir / "Justice" / "Cross (2007)"
-    create_dummy_opus(alb_dir / "01 - Genesis.opus", title="Genesis", artist="Justice", album="Cross", track_number=1, track_total=1, lyrics="")
+    create_dummy_opus(
+        alb_dir / "01 - Genesis.opus",
+        title="Genesis",
+        artist="Justice",
+        album="Cross",
+        track_number=1,
+        track_total=1,
+        lyrics="",
+    )
 
     # 1. Default config (show_missing_lyrics = true): table should appear
     cfg_file.write_text(
@@ -395,7 +458,3 @@ show_missing_lyrics = false
     res4 = runner.invoke(app, ["doctor", "--dir", str(library_dir), "--missing-lyrics"])
     assert res4.exit_code == 0
     assert "Tracks Missing Synced Lyrics" in res4.stdout
-
-
-
-

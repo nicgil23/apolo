@@ -1,4 +1,3 @@
-from typing import Optional
 import requests
 
 
@@ -13,9 +12,9 @@ class LRCLIBProvider:
         self,
         track_name: str,
         artist_name: str,
-        album_name: Optional[str] = None,
-        duration: Optional[float] = None,
-    ) -> Optional[str]:
+        album_name: str | None = None,
+        duration: float | None = None,
+    ) -> str | None:
         # 1. Try exact get endpoint
         params = {
             "track_name": track_name,
@@ -39,7 +38,9 @@ class LRCLIBProvider:
         # 2. Fallback to search endpoint
         try:
             search_params = {"q": f"{artist_name} {track_name}"}
-            resp = requests.get(f"{self.BASE_URL}/search", params=search_params, timeout=self.timeout)
+            resp = requests.get(
+                f"{self.BASE_URL}/search", params=search_params, timeout=self.timeout
+            )
             if resp.status_code == 200:
                 results = resp.json()
                 for item in results:

@@ -1,13 +1,14 @@
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
+
 from typer.testing import CliRunner
 
 from apolo.cli import app
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.metadata.models import TrackMetadata
-from apolo.tagging.tagger import AudioTagger
 from apolo.services.watcher import InboxWatcher
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus(output_path: Path):
@@ -35,7 +36,9 @@ def create_dummy_opus(output_path: Path):
 def test_inbox_watcher_debounce_and_processing(tmp_path):
     inbox_dir = tmp_path / "Inbox"
     library_dir = tmp_path / "Library"
-    config = ApoloConfig(directories=DirectoriesConfig(inbox_dir=inbox_dir, library_dir=library_dir))
+    config = ApoloConfig(
+        directories=DirectoriesConfig(inbox_dir=inbox_dir, library_dir=library_dir)
+    )
     watcher = InboxWatcher(config)
 
     test_file = inbox_dir / "incoming.opus"

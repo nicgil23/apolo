@@ -1,18 +1,22 @@
-from typing import List
 import musicbrainzngs
 
 from apolo.metadata.models import TrackMetadata
 
 
 class MusicBrainzProvider:
-    def __init__(self, user_agent: str = "Apolo", version: str = "1.0.0", contact: str = "https://github.com/apolo"):
+    def __init__(
+        self,
+        user_agent: str = "Apolo",
+        version: str = "1.0.0",
+        contact: str = "https://github.com/apolo",
+    ):
         musicbrainzngs.set_useragent(user_agent, version, contact)
 
-    def search(self, query: str, limit: int = 5) -> List[TrackMetadata]:
+    def search(self, query: str, limit: int = 5) -> list[TrackMetadata]:
         try:
             result = musicbrainzngs.search_recordings(query=query, limit=limit)
             recordings = result.get("recording-list", [])
-            results: List[TrackMetadata] = []
+            results: list[TrackMetadata] = []
 
             for rec in recordings:
                 title = rec.get("title")
@@ -20,10 +24,10 @@ class MusicBrainzProvider:
                 if not title or not artist_credit:
                     continue
 
-                main_artists: List[str] = []
-                featured_artists: List[str] = []
-                all_artists: List[str] = []
-                artist_parts: List[str] = []
+                main_artists: list[str] = []
+                featured_artists: list[str] = []
+                all_artists: list[str] = []
+                artist_parts: list[str] = []
                 in_featured = False
 
                 for credit in artist_credit:
@@ -49,10 +53,16 @@ class MusicBrainzProvider:
                     artist_parts.append(art_name)
                     if join:
                         artist_parts.append(join)
-                        if any(w in join.lower() for w in ["feat", "ft.", "featuring", "with", "pres."]):
+                        if any(
+                            w in join.lower() for w in ["feat", "ft.", "featuring", "with", "pres."]
+                        ):
                             in_featured = True
 
-                artist_display = "".join(artist_parts).strip() if artist_parts else (main_artists[0] if main_artists else None)
+                artist_display = (
+                    "".join(artist_parts).strip()
+                    if artist_parts
+                    else (main_artists[0] if main_artists else None)
+                )
                 if not artist_display:
                     continue
 
@@ -77,7 +87,9 @@ class MusicBrainzProvider:
 
                     rel_artist_credit = rel.get("artist-credit", [])
                     if rel_artist_credit and isinstance(rel_artist_credit[0], dict):
-                        album_artist = rel_artist_credit[0].get("artist", {}).get("name") or album_artist
+                        album_artist = (
+                            rel_artist_credit[0].get("artist", {}).get("name") or album_artist
+                        )
 
                     medium_list = rel.get("medium-list", [])
                     disc_num = None

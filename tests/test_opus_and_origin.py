@@ -1,9 +1,11 @@
 import io
 import subprocess
 from pathlib import Path
-from PIL import Image
+
+from mutagen.flac import FLAC
+from mutagen.flac import Picture as FLACPicture
 from mutagen.oggopus import OggOpus
-from mutagen.flac import FLAC, Picture as FLACPicture
+from PIL import Image
 
 from apolo.config import ApoloConfig, DirectoriesConfig, DownloaderConfig
 from apolo.pipeline import ProcessingPipeline, is_well_tagged
@@ -81,25 +83,31 @@ def test_is_well_tagged():
     # Incomplete / missing native tags
     assert not is_well_tagged({"has_native_tags": False, "title": "Song", "artist": "Artist"})
     assert not is_well_tagged({"has_native_tags": True, "title": "", "artist": "Artist"})
-    assert not is_well_tagged({"has_native_tags": True, "title": "Song", "artist": "Unknown Artist"})
+    assert not is_well_tagged(
+        {"has_native_tags": True, "title": "Song", "artist": "Unknown Artist"}
+    )
 
     # Well tagged with album and track number
-    assert is_well_tagged({
-        "has_native_tags": True,
-        "title": "Solar Wind",
-        "artist": "Stellar",
-        "album": "Cosmos",
-        "track_number": 2,
-    })
+    assert is_well_tagged(
+        {
+            "has_native_tags": True,
+            "title": "Solar Wind",
+            "artist": "Stellar",
+            "album": "Cosmos",
+            "track_number": 2,
+        }
+    )
 
     # Well tagged with date and track number
-    assert is_well_tagged({
-        "has_native_tags": True,
-        "title": "Solar Wind",
-        "artist": "Stellar",
-        "track_number": 2,
-        "date": "2022",
-    })
+    assert is_well_tagged(
+        {
+            "has_native_tags": True,
+            "title": "Solar Wind",
+            "artist": "Stellar",
+            "track_number": 2,
+            "date": "2022",
+        }
+    )
 
 
 def test_flac_transcoding_and_metadata_preservation(tmp_path):
@@ -107,7 +115,9 @@ def test_flac_transcoding_and_metadata_preservation(tmp_path):
     temp_dir = tmp_path / "temp"
     config = ApoloConfig(
         directories=DirectoriesConfig(library_dir=library_dir, temp_dir=temp_dir),
-        downloader=DownloaderConfig(audio_bitrate="256k", default_origin="local", preserve_existing_tags=True),
+        downloader=DownloaderConfig(
+            audio_bitrate="256k", default_origin="local", preserve_existing_tags=True
+        ),
     )
     pipeline = ProcessingPipeline(config)
 

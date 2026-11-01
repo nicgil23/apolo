@@ -1,13 +1,13 @@
 import io
 import subprocess
 from pathlib import Path
-from typing import Optional
+
 from PIL import Image
 
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
 from apolo.library.doctor import LibraryDoctor
-from apolo.metadata.models import TrackMetadata
 from apolo.library.organizer import LibraryOrganizer
+from apolo.metadata.models import TrackMetadata
 from apolo.tagging.tagger import AudioTagger
 from apolo.utils import is_compilation_album
 
@@ -16,7 +16,7 @@ def create_dummy_audio(
     output_path: Path,
     meta: TrackMetadata,
     has_cover: bool = True,
-    lyrics: Optional[str] = "[00:01.00] Test lyrics",
+    lyrics: str | None = "[00:01.00] Test lyrics",
 ):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -394,7 +394,9 @@ def test_diversity_suite_organization(tmp_path):
         dest = organizer.get_destination_path(meta)
 
         rel = dest.relative_to(config.directories.library_dir)
-        assert rel == expected_sub, f"Mismatch for '{item['id']}': got {rel}, expected {expected_sub}"
+        assert rel == expected_sub, (
+            f"Mismatch for '{item['id']}': got {rel}, expected {expected_sub}"
+        )
         assert is_compilation_album(meta.album, meta.album_artist) == item["is_compilation"]
 
 
@@ -488,6 +490,8 @@ def test_diversity_suite_doctor_audit(tmp_path):
     # Audit library
     report = doctor.scan_library(library_dir=library_dir)
     assert report.total_tracks == 11
-    assert len(report.incomplete_albums) == 0, f"Incomplete albums detected: {report.incomplete_albums}"
+    assert len(report.incomplete_albums) == 0, (
+        f"Incomplete albums detected: {report.incomplete_albums}"
+    )
     assert report.health_score == 100.0
     assert report.lyrics_coverage == 100.0

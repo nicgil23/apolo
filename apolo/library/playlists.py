@@ -2,7 +2,7 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+
 import mutagen
 
 from apolo.config import ApoloConfig, load_config
@@ -35,7 +35,7 @@ class PlaylistInfo:
 
 
 class PlaylistManager:
-    def __init__(self, config: Optional[ApoloConfig] = None):
+    def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
         self.library_dir = self.config.directories.library_dir
         self.playlists_dir = self.library_dir / "Playlists"
@@ -47,7 +47,7 @@ class PlaylistManager:
         self.playlists_dir.mkdir(parents=True, exist_ok=True)
         return self.playlists_dir
 
-    def list_playlists(self) -> List[PlaylistInfo]:
+    def list_playlists(self) -> list[PlaylistInfo]:
         """Scans and analyzes all .m3u and .m3u8 playlist files in Playlists directory."""
         if not self.playlists_dir.exists():
             return []
@@ -55,7 +55,7 @@ class PlaylistManager:
         playlist_files = sorted(
             list(self.playlists_dir.glob("*.m3u8")) + list(self.playlists_dir.glob("*.m3u"))
         )
-        results: List[PlaylistInfo] = []
+        results: list[PlaylistInfo] = []
 
         for pl_path in playlist_files:
             info = self.inspect_playlist(pl_path)
@@ -82,7 +82,11 @@ class PlaylistManager:
 
             info.total_tracks += 1
             # Resolve track path (relative to playlist folder or absolute)
-            track_path = (playlist_path.parent / line_str).resolve() if not os.path.isabs(line_str) else Path(line_str)
+            track_path = (
+                (playlist_path.parent / line_str).resolve()
+                if not os.path.isabs(line_str)
+                else Path(line_str)
+            )
             if track_path.exists() and track_path.is_file():
                 info.valid_tracks += 1
                 try:
@@ -99,25 +103,30 @@ class PlaylistManager:
     def create_smart_playlist(
         self,
         name: str,
-        genre: Optional[str] = None,
-        year: Optional[str] = None,
-        year_min: Optional[int] = None,
-        year_max: Optional[int] = None,
-        artist: Optional[str] = None,
-        origin: Optional[str] = None,
-        compilation: Optional[bool] = None,
-    ) -> Tuple[Path, int]:
+        genre: str | None = None,
+        year: str | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        artist: str | None = None,
+        origin: str | None = None,
+        compilation: bool | None = None,
+    ) -> tuple[Path, int]:
         """
         Creates an .m3u8 playlist in Playlists/ by querying tracks matching metadata filters.
         Returns: (playlist_path, track_count)
         """
         self.ensure_playlists_dir()
-        all_tracks = sorted([
-            p for p in self.library_dir.rglob("*")
-            if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS and "Playlists" not in p.parts
-        ])
+        all_tracks = sorted(
+            [
+                p
+                for p in self.library_dir.rglob("*")
+                if p.is_file()
+                and p.suffix.lower() in AUDIO_EXTENSIONS
+                and "Playlists" not in p.parts
+            ]
+        )
 
-        matched_tracks: List[Tuple[Path, str, str, float]] = []
+        matched_tracks: list[tuple[Path, str, str, float]] = []
 
         for p in all_tracks:
             info = self.pipeline.extract_file_info(p)
@@ -184,24 +193,29 @@ class PlaylistManager:
     def create_manual_playlist(
         self,
         name: str,
-        paths: List[Path],
-    ) -> Tuple[Path, int]:
+        paths: list[Path],
+    ) -> tuple[Path, int]:
         """Creates a playlist from a list of files or directories."""
         self.ensure_playlists_dir()
-        target_files: List[Path] = []
+        target_files: list[Path] = []
         for p in paths:
             if not p.exists():
                 continue
             if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
                 target_files.append(p)
             elif p.is_dir():
-                target_files.extend([
-                    f for f in p.rglob("*")
-                    if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS and "Playlists" not in f.parts
-                ])
+                target_files.extend(
+                    [
+                        f
+                        for f in p.rglob("*")
+                        if f.is_file()
+                        and f.suffix.lower() in AUDIO_EXTENSIONS
+                        and "Playlists" not in f.parts
+                    ]
+                )
 
         target_files = sorted(list(set(target_files)))
-        matched_tracks: List[Tuple[Path, str, str, float]] = []
+        matched_tracks: list[tuple[Path, str, str, float]] = []
 
         for f in target_files:
             info = self.pipeline.extract_file_info(f)
@@ -216,7 +230,7 @@ class PlaylistManager:
 
         return pl_path, len(matched_tracks)
 
-    def _write_m3u8(self, pl_path: Path, tracks: List[Tuple[Path, str, str, float]]) -> None:
+    def _write_m3u8(self, pl_path: Path, tracks: list[tuple[Path, str, str, float]]) -> None:
         """Writes an extended #EXTM3U file with relative file paths."""
         lines = ["#EXTM3U"]
         for path, title, artist, dur in tracks:
@@ -230,7 +244,7 @@ class PlaylistManager:
 
         pl_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    def repair_playlists(self) -> Dict[str, int]:
+    def repair_playlists(self) -> dict[str, int]:
         """
         Scans all playlists for broken file links.
         Attempts to locate relocated audio files in library_dir by filename and rewrites playlists.
@@ -248,7 +262,7 @@ class PlaylistManager:
         playlist_files = sorted(
             list(self.playlists_dir.glob("*.m3u8")) + list(self.playlists_dir.glob("*.m3u"))
         )
-        repaired_summary: Dict[str, int] = {}
+        repaired_summary: dict[str, int] = {}
 
         for pl_path in playlist_files:
             try:
@@ -266,7 +280,11 @@ class PlaylistManager:
                     new_lines.append(line)
                     continue
 
-                track_path = (pl_path.parent / line_str).resolve() if not os.path.isabs(line_str) else Path(line_str)
+                track_path = (
+                    (pl_path.parent / line_str).resolve()
+                    if not os.path.isabs(line_str)
+                    else Path(line_str)
+                )
                 if track_path.exists():
                     new_lines.append(line)
                 else:
@@ -295,7 +313,7 @@ class PlaylistManager:
         name: str,
         dest_dir: Path,
         copy_files: bool = True,
-    ) -> Tuple[Path, int]:
+    ) -> tuple[Path, int]:
         """
         Exports a playlist to a target directory (e.g. SD Card, USB Drive).
         Copies audio tracks and creates a local playlist file.
@@ -310,7 +328,7 @@ class PlaylistManager:
             Path(name),
         ]
 
-        target_pl: Optional[Path] = None
+        target_pl: Path | None = None
         for cand in pl_candidates:
             if cand.exists() and cand.is_file():
                 target_pl = cand
@@ -333,7 +351,11 @@ class PlaylistManager:
             if line_str.startswith("#"):
                 continue
 
-            track_path = (target_pl.parent / line_str).resolve() if not os.path.isabs(line_str) else Path(line_str)
+            track_path = (
+                (target_pl.parent / line_str).resolve()
+                if not os.path.isabs(line_str)
+                else Path(line_str)
+            )
             if track_path.exists() and track_path.is_file():
                 dest_track = dest_dir / track_path.name
                 if copy_files and not dest_track.exists():

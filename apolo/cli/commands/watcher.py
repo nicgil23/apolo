@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+
 import typer
 
 from apolo.cli.ui import console
@@ -11,7 +11,7 @@ def register(app: typer.Typer) -> None:
     @app.command(name="watch")
     @app.command(name="daemon", hidden=True)
     def watch_cmd(
-        watch_dir: Optional[Path] = typer.Option(
+        watch_dir: Path | None = typer.Option(
             None,
             "--dir",
             "-d",
@@ -32,4 +32,6 @@ def register(app: typer.Typer) -> None:
         """[bold green]Inbox Watcher Daemon[/bold green]: Monitor Inbox in the background, auto-transcode and organize new tracks, and send desktop notifications."""
         config = load_config()
         watcher = InboxWatcher(config)
-        watcher.run_watch_loop(watch_dir=watch_dir, poll_interval=poll_interval, once=once, console=console)
+        watcher.run_watch_loop(
+            watch_dir=watch_dir, poll_interval=poll_interval, once=once, console=console
+        )

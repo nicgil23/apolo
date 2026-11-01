@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import List, Tuple
 
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.metadata.matcher import MetadataMatcher
@@ -10,9 +9,15 @@ from apolo.pipeline import ProcessingPipeline
 def test_matcher_get_ranked_candidates(monkeypatch):
     matcher = MetadataMatcher()
 
-    cand1 = TrackMetadata(title="Get Lucky", artist="Daft Punk", album="Random Access Memories", duration=248.0)
-    cand2 = TrackMetadata(title="Get Lucky (Radio Edit)", artist="Daft Punk", album="Get Lucky", duration=240.0)
-    cand3 = TrackMetadata(title="Lucky", artist="Jason Mraz", album="We Sing. We Dance.", duration=189.0)
+    cand1 = TrackMetadata(
+        title="Get Lucky", artist="Daft Punk", album="Random Access Memories", duration=248.0
+    )
+    cand2 = TrackMetadata(
+        title="Get Lucky (Radio Edit)", artist="Daft Punk", album="Get Lucky", duration=240.0
+    )
+    cand3 = TrackMetadata(
+        title="Lucky", artist="Jason Mraz", album="We Sing. We Dance.", duration=189.0
+    )
 
     monkeypatch.setattr(matcher, "search_all", lambda q, **kwargs: [cand1, cand2, cand3])
 
@@ -39,7 +44,9 @@ def test_pipeline_with_candidate_selector(tmp_path: Path, monkeypatch):
         d.mkdir(parents=True)
 
     config = ApoloConfig(
-        directories=DirectoriesConfig(library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir),
+        directories=DirectoriesConfig(
+            library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir
+        ),
     )
 
     test_file = inbox_dir / "track.opus"
@@ -51,13 +58,15 @@ def test_pipeline_with_candidate_selector(tmp_path: Path, monkeypatch):
     c1 = TrackMetadata(title="Track Option 1", artist="Artist A", album="Album 1")
     c2 = TrackMetadata(title="Track Option 2", artist="Artist B", album="Album 2")
 
-    monkeypatch.setattr(pipeline.matcher, "get_ranked_candidates", lambda *args, **kwargs: [(90.0, c1), (80.0, c2)])
+    monkeypatch.setattr(
+        pipeline.matcher, "get_ranked_candidates", lambda *args, **kwargs: [(90.0, c1), (80.0, c2)]
+    )
     monkeypatch.setattr(pipeline.lyrics_provider, "get_synced_lyrics", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "convert_to_opus", lambda f: f)
     monkeypatch.setattr(pipeline.tagger, "tag_opus", lambda f, m: None)
 
     # Selector that picks second candidate
-    def pick_second(candidates: List[Tuple[float, TrackMetadata]], query: str):
+    def pick_second(candidates: list[tuple[float, TrackMetadata]], query: str):
         return candidates[1][1]
 
     dest_audio, _, meta = pipeline.process_file(test_file, candidate_selector=pick_second)

@@ -1,10 +1,9 @@
-
 from apolo.config import ApoloConfig, DirectoriesConfig
-from apolo.lyrics.lrclib import LRCLIBProvider
-from apolo.metadata.itunes import iTunesProvider
-from apolo.metadata.deezer import DeezerProvider
-from apolo.metadata.models import TrackMetadata
 from apolo.library.organizer import LibraryOrganizer
+from apolo.lyrics.lrclib import LRCLIBProvider
+from apolo.metadata.deezer import DeezerProvider
+from apolo.metadata.itunes import iTunesProvider
+from apolo.metadata.models import TrackMetadata
 from apolo.utils import clean_track_title, sanitize_filename
 
 
@@ -36,26 +35,30 @@ def test_metadata_providers_search(monkeypatch):
 
     def fake_get(url, *args, **kwargs):
         if "itunes.apple.com" in url:
-            return FakeResponse({
-                "results": [
-                    {
-                        "trackName": "Get Lucky",
-                        "artistName": "Daft Punk",
-                        "collectionName": "Random Access Memories",
-                        "releaseDate": "2013-05-17T07:00:00Z",
-                    }
-                ]
-            })
+            return FakeResponse(
+                {
+                    "results": [
+                        {
+                            "trackName": "Get Lucky",
+                            "artistName": "Daft Punk",
+                            "collectionName": "Random Access Memories",
+                            "releaseDate": "2013-05-17T07:00:00Z",
+                        }
+                    ]
+                }
+            )
         elif "api.deezer.com" in url:
-            return FakeResponse({
-                "data": [
-                    {
-                        "title": "Get Lucky",
-                        "artist": {"name": "Daft Punk"},
-                        "album": {"title": "Random Access Memories"},
-                    }
-                ]
-            })
+            return FakeResponse(
+                {
+                    "data": [
+                        {
+                            "title": "Get Lucky",
+                            "artist": {"name": "Daft Punk"},
+                            "album": {"title": "Random Access Memories"},
+                        }
+                    ]
+                }
+            )
         return FakeResponse({})
 
     monkeypatch.setattr("requests.get", fake_get)
@@ -89,9 +92,7 @@ def test_lrclib_synced_lyrics(monkeypatch):
 
 
 def test_library_organizer(tmp_path):
-    config = ApoloConfig(
-        directories=DirectoriesConfig(library_dir=tmp_path / "Music")
-    )
+    config = ApoloConfig(directories=DirectoriesConfig(library_dir=tmp_path / "Music"))
     organizer = LibraryOrganizer(config)
 
     meta = TrackMetadata(
@@ -104,7 +105,14 @@ def test_library_organizer(tmp_path):
     )
 
     dest = organizer.get_destination_path(meta)
-    assert dest == tmp_path / "Music" / "Daft Punk" / "Random Access Memories (2013)" / "08 - Get Lucky.opus"
+    assert (
+        dest
+        == tmp_path
+        / "Music"
+        / "Daft Punk"
+        / "Random Access Memories (2013)"
+        / "08 - Get Lucky.opus"
+    )
 
     # Create dummy file to organize
     dummy_source = tmp_path / "dummy.opus"

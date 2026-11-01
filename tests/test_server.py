@@ -2,6 +2,7 @@ import threading
 import time
 from http import HTTPStatus
 from unittest.mock import patch
+
 import requests
 
 from apolo.metadata.models import TrackMetadata
@@ -33,9 +34,13 @@ def test_task_manager_enqueue(tmp_path):
         album="Test Album",
         date="2026",
     )
-    with patch.object(tm.pipeline, "process_url", return_value=[(tmp_path / "song.opus", None, fake_meta)]):
+    with patch.object(
+        tm.pipeline, "process_url", return_value=[(tmp_path / "song.opus", None, fake_meta)]
+    ):
         with patch.object(tm, "send_desktop_notification"):
-            task = tm.enqueue_download("https://www.youtube.com/watch?v=12345&list=RD12345", origin="youtube")
+            task = tm.enqueue_download(
+                "https://www.youtube.com/watch?v=12345&list=RD12345", origin="youtube"
+            )
             assert task.id is not None
             assert task.url == "https://www.youtube.com/watch?v=12345"
             assert task.status in ("queued", "downloading", "completed")
@@ -50,11 +55,12 @@ def test_task_manager_enqueue(tmp_path):
 
 def test_task_manager_cancellation():
     tm = ApoloTaskManager()
-    task = tm.enqueue_download("https://www.youtube.com/watch?v=dummy")
-    assert tm.cancel_task(task.id) is True
-    cancelled_task = tm.get_task(task.id)
-    assert cancelled_task.status == "cancelled"
-    assert cancelled_task.is_cancelled is True
+    with patch.object(tm, "_run_download_task"):
+        task = tm.enqueue_download("https://www.youtube.com/watch?v=dummy")
+        assert tm.cancel_task(task.id) is True
+        cancelled_task = tm.get_task(task.id)
+        assert cancelled_task.status == "cancelled"
+        assert cancelled_task.is_cancelled is True
 
 
 def test_task_manager_failure():
@@ -104,11 +110,16 @@ def test_server_http_endpoints(tmp_path):
             fake_meta = TrackMetadata(title="Sample Track", artist="Sample Artist", album="Single")
             return [(tmp_path / "sample.opus", None, fake_meta)]
 
-        with patch.object(server.task_manager.pipeline, "process_url", side_effect=mock_slow_process):
+        with patch.object(
+            server.task_manager.pipeline, "process_url", side_effect=mock_slow_process
+        ):
             with patch.object(server.task_manager, "send_desktop_notification"):
                 post_res = requests.post(
                     f"{base_url}/api/download",
-                    json={"url": "https://www.youtube.com/watch?v=abcdef&list=RDabcdef", "origin": "youtube"},
+                    json={
+                        "url": "https://www.youtube.com/watch?v=abcdef&list=RDabcdef",
+                        "origin": "youtube",
+                    },
                 )
                 assert post_res.status_code == HTTPStatus.ACCEPTED
                 task_data = post_res.json()["task"]
@@ -138,8 +149,9 @@ def test_server_http_endpoints(tmp_path):
 
 def test_task_manager_clear_history():
     tm = ApoloTaskManager()
-    t1 = tm.enqueue_download("https://www.youtube.com/watch?v=111")
-    t2 = tm.enqueue_download("https://www.youtube.com/watch?v=222")
+    with patch.object(tm, "_run_download_task"):
+        t1 = tm.enqueue_download("https://www.youtube.com/watch?v=111")
+        t2 = tm.enqueue_download("https://www.youtube.com/watch?v=222")
     t1.status = "completed"
     t2.status = "failed"
     cleared = tm.clear_history()
@@ -155,10 +167,14 @@ def test_task_manager_playlist_subtracks():
         on_subtrack_status = kwargs.get("on_subtrack_status")
         on_subtrack_progress = kwargs.get("on_subtrack_progress")
         if on_playlist_init:
-            on_playlist_init("Abbey Road", 2, [
-                {"id": "t1", "title": "Come Together", "status": "queued", "progress": 0.0},
-                {"id": "t2", "title": "Something", "status": "queued", "progress": 0.0},
-            ])
+            on_playlist_init(
+                "Abbey Road",
+                2,
+                [
+                    {"id": "t1", "title": "Come Together", "status": "queued", "progress": 0.0},
+                    {"id": "t2", "title": "Something", "status": "queued", "progress": 0.0},
+                ],
+            )
         if on_subtrack_status:
             on_subtrack_status("t1", "downloading")
         if on_subtrack_progress:
@@ -180,8 +196,10 @@ def test_task_manager_playlist_subtracks():
 
 def test_enqueue_download_with_title():
     tm = ApoloTaskManager()
-    with patch.object(tm.pipeline, "process_url", return_value=[]):
-        task = tm.enqueue_download("https://www.youtube.com/watch?v=xyz", origin="browser", title="Custom Song Title")
+    with patch.object(tm, "_run_download_task"):
+        task = tm.enqueue_download(
+            "https://www.youtube.com/watch?v=xyz", origin="browser", title="Custom Song Title"
+        )
         assert task.title == "Custom Song Title"
 
 
@@ -202,5 +220,3 @@ def test_task_active_track_callbacks():
         assert t.current_track_title == "First Track"
         assert t.current_track_artist == "Artist"
         assert t.current_track_progress == 45.0
-
-

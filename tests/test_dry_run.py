@@ -1,12 +1,13 @@
 import subprocess
 from pathlib import Path
+
 from typer.testing import CliRunner
 
 from apolo.cli import app
 from apolo.config import ApoloConfig, DirectoriesConfig
+from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import ProcessingPipeline
 from apolo.tagging.tagger import AudioTagger
-from apolo.metadata.models import TrackMetadata
 
 
 def create_dummy_opus(output_path: Path, title: str = "Test Track", artist: str = "Test Artist"):

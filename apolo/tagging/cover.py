@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from typing import List, Tuple
+
 from PIL import Image
 
 from apolo.constants import AUDIO_EXTENSIONS
@@ -25,10 +25,10 @@ class CoverManager:
 
     @staticmethod
     def extract_covers(
-        paths: List[Path],
+        paths: list[Path],
         target_filename: str = "cover.jpg",
         overwrite: bool = False,
-    ) -> List[Tuple[Path, Path]]:
+    ) -> list[tuple[Path, Path]]:
         """
         Scans paths for audio files, extracts embedded cover art, and writes target_filename
         (e.g. cover.jpg or folder.jpg) to the containing directory.
@@ -37,14 +37,20 @@ class CoverManager:
         extracted = []
         seen_dirs = set()
 
-        target_files: List[Path] = []
+        target_files: list[Path] = []
         for p in paths:
             if not p.exists():
                 continue
             if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
                 target_files.append(p)
             elif p.is_dir():
-                target_files.extend([f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS])
+                target_files.extend(
+                    [
+                        f
+                        for f in p.rglob("*")
+                        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+                    ]
+                )
 
         target_files = sorted(list(set(target_files)))
 
@@ -71,7 +77,7 @@ class CoverManager:
 
     @staticmethod
     def set_album_cover(
-        paths: List[Path],
+        paths: list[Path],
         image_path: Path,
         optimize: bool = True,
     ) -> int:
@@ -85,14 +91,20 @@ class CoverManager:
         raw_bytes = image_path.read_bytes()
         cover_data = CoverManager.optimize_image_bytes(raw_bytes) if optimize else raw_bytes
 
-        target_files: List[Path] = []
+        target_files: list[Path] = []
         for p in paths:
             if not p.exists():
                 continue
             if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
                 target_files.append(p)
             elif p.is_dir():
-                target_files.extend([f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS])
+                target_files.extend(
+                    [
+                        f
+                        for f in p.rglob("*")
+                        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+                    ]
+                )
 
         target_files = sorted(list(set(target_files)))
         updated_count = 0

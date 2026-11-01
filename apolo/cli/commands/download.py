@@ -1,4 +1,3 @@
-from typing import List, Optional
 import typer
 
 from apolo.cli.ui import console, display_track_summary, make_cli_candidate_selector
@@ -10,8 +9,10 @@ def register(app: typer.Typer) -> None:
     @app.command(name="download")
     @app.command(name="dl", hidden=True)
     def download_cmd(
-        urls: List[str] = typer.Argument(..., help="URLs from YouTube, SoundCloud, or supported extractors to download"),
-        origin: Optional[str] = typer.Option(
+        urls: list[str] = typer.Argument(
+            ..., help="URLs from YouTube, SoundCloud, or supported extractors to download"
+        ),
+        origin: str | None = typer.Option(
             None,
             "--origin",
             "-o",
@@ -38,8 +39,13 @@ def register(app: typer.Typer) -> None:
         for url in urls:
             prefix = "[bold yellow][DRY-RUN][/bold yellow] " if dry_run else ""
             console.print(f"\n{prefix}[bold magenta]Processing URL:[/bold magenta] {url}")
-            status_msg = "[bold yellow]Simulating download & metadata lookup...[/bold yellow]" if dry_run else "[bold cyan]Working on audio download & tagging...[/bold cyan]"
+            status_msg = (
+                "[bold yellow]Simulating download & metadata lookup...[/bold yellow]"
+                if dry_run
+                else "[bold cyan]Working on audio download & tagging...[/bold cyan]"
+            )
             with console.status(status_msg) as status:
+
                 def update_status(step: str, msg: str):
                     status.update(f"[bold cyan]{msg}[/bold cyan]")
 
@@ -52,7 +58,9 @@ def register(app: typer.Typer) -> None:
                         on_progress=update_status,
                     )
                     if not results:
-                        console.print(f"[bold red]Error: No audio could be processed for:[/bold red] {url}")
+                        console.print(
+                            f"[bold red]Error: No audio could be processed for:[/bold red] {url}"
+                        )
                     for dest_audio, dest_lrc, meta in results:
                         display_track_summary(dest_audio, dest_lrc, meta, dry_run=dry_run)
                 except Exception as e:

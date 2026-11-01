@@ -1,10 +1,10 @@
 import base64
 import io
 from pathlib import Path
-from typing import Optional
+
 import mutagen
-from mutagen.oggopus import OggOpus
 from mutagen.flac import Picture
+from mutagen.oggopus import OggOpus
 from PIL import Image
 
 from apolo.metadata.models import TrackMetadata
@@ -18,7 +18,7 @@ def _is_valid_vorbis_key(key: str) -> bool:
 
 class AudioTagger:
     @staticmethod
-    def extract_cover_art_from_file(file_path: Path) -> Optional[bytes]:
+    def extract_cover_art_from_file(file_path: Path) -> bytes | None:
         """
         Extracts embedded front cover art bytes from an existing audio file (FLAC, MP3, MP4, Opus, Ogg).
         """
@@ -92,7 +92,9 @@ class AudioTagger:
         elif metadata.artist:
             audio["ARTIST"] = [metadata.artist]
 
-        album_artist_val = metadata.album_artist or (metadata.main_artists[0] if metadata.main_artists else metadata.artist)
+        album_artist_val = metadata.album_artist or (
+            metadata.main_artists[0] if metadata.main_artists else metadata.artist
+        )
         if album_artist_val:
             audio["ALBUMARTIST"] = [str(album_artist_val)]
 
@@ -106,7 +108,11 @@ class AudioTagger:
             audio["ARTIST_FEATURED"] = [str(a) for a in metadata.featured_artists]
 
         album_to_tag = metadata.album
-        if not album_to_tag or album_to_tag.strip().lower() in ["single", "singles", "unknown album"]:
+        if not album_to_tag or album_to_tag.strip().lower() in [
+            "single",
+            "singles",
+            "unknown album",
+        ]:
             album_to_tag = f"{metadata.title} - Single" if metadata.title else "Single"
         if album_to_tag:
             audio["ALBUM"] = [album_to_tag]
@@ -114,6 +120,7 @@ class AudioTagger:
         track_num = metadata.track_number
         track_tot = metadata.track_total
         from apolo.utils import is_single_release
+
         if track_num is None and is_single_release(album_to_tag, track_tot):
             track_num = 1
             if track_tot is None:
@@ -142,17 +149,36 @@ class AudioTagger:
 
         # Passthrough extra native tags if present and not already written
         standard_vorbis_keys = {
-            "TITLE", "ARTIST", "ALBUMARTIST", "ARTISTS", "MAIN_ARTIST", "ARTIST_MAIN",
-            "FEATURED_ARTIST", "ARTIST_FEATURED", "ALBUM", "TRACKNUMBER", "TRACKTOTAL",
-            "DATE", "GENRE", "DISCNUMBER", "DISCTOTAL", "COMPILATION", "LYRICS",
-            "ORIGIN", "SOURCE", "ORIGEN", "METADATA_BLOCK_PICTURE"
+            "TITLE",
+            "ARTIST",
+            "ALBUMARTIST",
+            "ARTISTS",
+            "MAIN_ARTIST",
+            "ARTIST_MAIN",
+            "FEATURED_ARTIST",
+            "ARTIST_FEATURED",
+            "ALBUM",
+            "TRACKNUMBER",
+            "TRACKTOTAL",
+            "DATE",
+            "GENRE",
+            "DISCNUMBER",
+            "DISCTOTAL",
+            "COMPILATION",
+            "LYRICS",
+            "ORIGIN",
+            "SOURCE",
+            "ORIGEN",
+            "METADATA_BLOCK_PICTURE",
         }
         if metadata.extra_tags:
             for k, v in metadata.extra_tags.items():
                 k_upper = str(k).upper()
                 if _is_valid_vorbis_key(k_upper) and k_upper not in standard_vorbis_keys:
                     try:
-                        audio[k_upper] = [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+                        audio[k_upper] = (
+                            [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+                        )
                     except Exception:
                         pass
 
@@ -188,6 +214,7 @@ class AudioTagger:
         and embeds high quality cover art in FLAC pictures.
         """
         from mutagen.flac import FLAC
+
         try:
             audio = FLAC(file_path)
         except Exception:
@@ -200,7 +227,9 @@ class AudioTagger:
         elif metadata.artist:
             audio["ARTIST"] = [metadata.artist]
 
-        album_artist_val = metadata.album_artist or (metadata.main_artists[0] if metadata.main_artists else metadata.artist)
+        album_artist_val = metadata.album_artist or (
+            metadata.main_artists[0] if metadata.main_artists else metadata.artist
+        )
         if album_artist_val:
             audio["ALBUMARTIST"] = [str(album_artist_val)]
 
@@ -214,7 +243,11 @@ class AudioTagger:
             audio["ARTIST_FEATURED"] = [str(a) for a in metadata.featured_artists]
 
         album_to_tag = metadata.album
-        if not album_to_tag or album_to_tag.strip().lower() in ["single", "singles", "unknown album"]:
+        if not album_to_tag or album_to_tag.strip().lower() in [
+            "single",
+            "singles",
+            "unknown album",
+        ]:
             album_to_tag = f"{metadata.title} - Single" if metadata.title else "Single"
         if album_to_tag:
             audio["ALBUM"] = [album_to_tag]
@@ -222,6 +255,7 @@ class AudioTagger:
         track_num = metadata.track_number
         track_tot = metadata.track_total
         from apolo.utils import is_single_release
+
         if track_num is None and is_single_release(album_to_tag, track_tot):
             track_num = 1
             if track_tot is None:
@@ -250,17 +284,35 @@ class AudioTagger:
 
         # Passthrough extra native tags if present and not already written
         standard_vorbis_keys = {
-            "TITLE", "ARTIST", "ALBUMARTIST", "ARTISTS", "MAIN_ARTIST", "ARTIST_MAIN",
-            "FEATURED_ARTIST", "ARTIST_FEATURED", "ALBUM", "TRACKNUMBER", "TRACKTOTAL",
-            "DATE", "GENRE", "DISCNUMBER", "DISCTOTAL", "COMPILATION", "LYRICS",
-            "ORIGIN", "SOURCE", "ORIGEN"
+            "TITLE",
+            "ARTIST",
+            "ALBUMARTIST",
+            "ARTISTS",
+            "MAIN_ARTIST",
+            "ARTIST_MAIN",
+            "FEATURED_ARTIST",
+            "ARTIST_FEATURED",
+            "ALBUM",
+            "TRACKNUMBER",
+            "TRACKTOTAL",
+            "DATE",
+            "GENRE",
+            "DISCNUMBER",
+            "DISCTOTAL",
+            "COMPILATION",
+            "LYRICS",
+            "ORIGIN",
+            "SOURCE",
+            "ORIGEN",
         }
         if metadata.extra_tags:
             for k, v in metadata.extra_tags.items():
                 k_upper = str(k).upper()
                 if _is_valid_vorbis_key(k_upper) and k_upper not in standard_vorbis_keys:
                     try:
-                        audio[k_upper] = [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+                        audio[k_upper] = (
+                            [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+                        )
                     except Exception:
                         pass
 
@@ -301,7 +353,7 @@ class AudioTagger:
     def update_tags(
         file_path: Path,
         updates: dict,
-        cover_data: Optional[bytes] = None,
+        cover_data: bytes | None = None,
     ) -> None:
         """
         Updates specific Vorbis tags and/or cover art on an .opus or .flac file without wiping unmentioned tags.
@@ -315,6 +367,7 @@ class AudioTagger:
         is_flac = file_path.suffix.lower() == ".flac"
         if is_flac:
             from mutagen.flac import FLAC
+
             try:
                 audio = FLAC(file_path)
             except Exception:
@@ -335,6 +388,7 @@ class AudioTagger:
                 audio["ARTISTS"] = ["; ".join(updates["artists"])]
         elif "artist" in updates and updates["artist"] is not None:
             from apolo.utils import parse_artists
+
             m, f, a, _ = parse_artists(str(updates["artist"]))
             audio["ARTIST"] = [str(x) for x in a] if a else [str(updates["artist"])]
             if len(a) > 1:
@@ -418,4 +472,3 @@ class AudioTagger:
                 pass
 
         audio.save()
-

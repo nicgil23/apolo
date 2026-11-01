@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, DirectoriesConfig
@@ -13,11 +14,28 @@ from apolo.metadata.genres import (
 from apolo.metadata.models import TrackMetadata
 
 
-def create_dummy_opus(output_path: Path, title: str = "Song", artist: str = "Artist", album: str = "Album", genre: str = ""):
+def create_dummy_opus(
+    output_path: Path,
+    title: str = "Song",
+    artist: str = "Artist",
+    album: str = "Album",
+    genre: str = "",
+):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-        "-t", "1", "-c:a", "libopus", "-b:a", "128k", str(output_path)
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=48000:cl=stereo",
+        "-t",
+        "1",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "128k",
+        str(output_path),
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     f = OggOpus(output_path)

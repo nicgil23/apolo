@@ -1,13 +1,14 @@
 import io
 import subprocess
 from pathlib import Path
-from PIL import Image
+
 from mutagen.oggopus import OggOpus
+from PIL import Image
 from typer.testing import CliRunner
 
 from apolo.cli import app
-from apolo.tagging.cover import CoverManager
 from apolo.metadata.models import TrackMetadata
+from apolo.tagging.cover import CoverManager
 from apolo.tagging.tagger import AudioTagger
 
 

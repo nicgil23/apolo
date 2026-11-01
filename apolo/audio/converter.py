@@ -1,17 +1,17 @@
-import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
+
 from apolo.config import ApoloConfig, load_config
+from apolo.system import SystemEnvironment
 
 
 class AudioConverter:
-    def __init__(self, config: Optional[ApoloConfig] = None):
+    def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
 
     @staticmethod
     def is_ffmpeg_available() -> bool:
-        return shutil.which("ffmpeg") is not None
+        return SystemEnvironment.check_ffmpeg()
 
     def convert_to_opus(self, input_file: Path) -> Path:
         """
@@ -21,14 +21,13 @@ class AudioConverter:
         if input_file.suffix.lower() == ".opus":
             return input_file
 
-        if not self.is_ffmpeg_available():
-            raise RuntimeError("ffmpeg is required for audio conversion but was not found in PATH.")
+        ffmpeg_bin = SystemEnvironment.require_binary("ffmpeg")
 
         output_file = self.config.directories.temp_dir / f"{input_file.stem}.opus"
         output_file.parent.mkdir(parents=True, exist_ok=True)
         bitrate = getattr(self.config.downloader, "audio_bitrate", "256k")
         cmd = [
-            "ffmpeg",
+            str(ffmpeg_bin),
             "-y",
             "-i",
             str(input_file),

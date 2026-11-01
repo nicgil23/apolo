@@ -1,10 +1,11 @@
 import subprocess
 from pathlib import Path
+
 from mutagen.oggopus import OggOpus
 from typer.testing import CliRunner
 
-from apolo.cli import app
 from apolo.audio.gain import LoudnessScanner
+from apolo.cli import app
 from apolo.metadata.models import TrackMetadata
 from apolo.tagging.tagger import AudioTagger
 

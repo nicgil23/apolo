@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from apolo import __version__
@@ -24,35 +24,35 @@ class TaskInfo:
     status: str  # queued, downloading, retrying, completed, failed, cancelled
     created_at: float
     updated_at: float
-    title: Optional[str] = None
+    title: str | None = None
     is_playlist: bool = False
     total_tracks: int = 0
     completed_tracks: int = 0
     failed_tracks: int = 0
-    current_track_index: Optional[int] = None
-    current_track_title: Optional[str] = None
-    current_track_artist: Optional[str] = None
+    current_track_index: int | None = None
+    current_track_title: str | None = None
+    current_track_artist: str | None = None
     current_track_progress: float = 0.0
     current_track_progress_text: str = ""
     progress: float = 0.0
     progress_text: str = ""
-    subtracks: List[Dict[str, Any]] = field(default_factory=list)
-    results: List[Dict[str, Any]] = field(default_factory=list)
-    error: Optional[str] = None
+    subtracks: list[dict[str, Any]] = field(default_factory=list)
+    results: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
     retry_count: int = 0
-    next_retry_at: Optional[float] = None
+    next_retry_at: float | None = None
     is_cancelled: bool = False
 
 
 class ApoloTaskManager:
-    def __init__(self, config: Optional[ApoloConfig] = None, max_workers: int = 3):
+    def __init__(self, config: ApoloConfig | None = None, max_workers: int = 3):
         self.config = config or load_config()
         self.pipeline = ProcessingPipeline(self.config)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.tasks: Dict[str, TaskInfo] = {}
+        self.tasks: dict[str, TaskInfo] = {}
 
     @staticmethod
-    def send_desktop_notification(title: str, message: str, icon_path: Optional[Path] = None) -> None:
+    def send_desktop_notification(title: str, message: str, icon_path: Path | None = None) -> None:
         """Sends a desktop notification using notify-send if available."""
         cmd = ["notify-send", "-a", "Apolo", title, message]
         if icon_path and icon_path.exists():
@@ -62,7 +62,9 @@ class ApoloTaskManager:
         except Exception:
             pass
 
-    def enqueue_download(self, url: str, origin: Optional[str] = None, title: Optional[str] = None) -> TaskInfo:
+    def enqueue_download(
+        self, url: str, origin: str | None = None, title: str | None = None
+    ) -> TaskInfo:
         cleaned = clean_media_url(url.strip())
         task_id = str(uuid.uuid4())[:8]
         inferred_origin = origin or ("youtube" if "youtu" in cleaned.lower() else "download")
@@ -114,7 +116,9 @@ class ApoloTaskManager:
         def cancel_chk() -> bool:
             return task.is_cancelled
 
-        def on_playlist_init(title: str, total_tracks: int, subtracks_data: List[Dict[str, Any]]) -> None:
+        def on_playlist_init(
+            title: str, total_tracks: int, subtracks_data: list[dict[str, Any]]
+        ) -> None:
             if not task.is_cancelled:
                 task.is_playlist = True
                 task.title = title or task.title or "Playlist"
@@ -125,9 +129,9 @@ class ApoloTaskManager:
         def on_subtrack_status(
             sub_id: str,
             status: str,
-            error: Optional[str] = None,
+            error: str | None = None,
             retry_count: int = 0,
-            next_retry_at: Optional[float] = None,
+            next_retry_at: float | None = None,
         ) -> None:
             if not task.is_cancelled:
                 for st in task.subtracks:
@@ -146,7 +150,9 @@ class ApoloTaskManager:
                         elif status == "failed":
                             st["progress_text"] = "Error"
                         break
-                task.completed_tracks = sum(1 for st in task.subtracks if st.get("status") == "completed")
+                task.completed_tracks = sum(
+                    1 for st in task.subtracks if st.get("status") == "completed"
+                )
                 task.failed_tracks = sum(1 for st in task.subtracks if st.get("status") == "failed")
                 task.updated_at = time.time()
 
@@ -160,7 +166,9 @@ class ApoloTaskManager:
                         break
                 task.updated_at = time.time()
 
-        def on_active_track(idx: int, total: int, title: str, artist: Optional[str], pct: float, text: str) -> None:
+        def on_active_track(
+            idx: int, total: int, title: str, artist: str | None, pct: float, text: str
+        ) -> None:
             if not task.is_cancelled:
                 task.current_track_index = idx
                 task.current_track_title = title
@@ -205,14 +213,16 @@ class ApoloTaskManager:
 
             task.results = []
             for dest_audio, dest_lrc, meta in processed:
-                task.results.append({
-                    "audio_path": str(dest_audio),
-                    "lrc_path": str(dest_lrc) if dest_lrc else None,
-                    "title": meta.title,
-                    "artist": meta.artist,
-                    "album": meta.album,
-                    "date": meta.date,
-                })
+                task.results.append(
+                    {
+                        "audio_path": str(dest_audio),
+                        "lrc_path": str(dest_lrc) if dest_lrc else None,
+                        "title": meta.title,
+                        "artist": meta.artist,
+                        "album": meta.album,
+                        "date": meta.date,
+                    }
+                )
                 self.send_desktop_notification(
                     title="Apolo: Canción añadida",
                     message=f"{meta.artist} - {meta.title}\n{meta.album or 'Single'}",
@@ -235,10 +245,10 @@ class ApoloTaskManager:
                     message=f"Falló al procesar: {str(e)}",
                 )
 
-    def get_task(self, task_id: str) -> Optional[TaskInfo]:
+    def get_task(self, task_id: str) -> TaskInfo | None:
         return self.tasks.get(task_id)
 
-    def list_tasks(self, limit: int = 20) -> List[TaskInfo]:
+    def list_tasks(self, limit: int = 20) -> list[TaskInfo]:
         all_tasks = sorted(self.tasks.values(), key=lambda t: t.created_at, reverse=True)
         return all_tasks[:limit]
 
@@ -271,14 +281,20 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
 
         if path in ("", "/health", "/api/status"):
-            active_count = sum(1 for t in self.task_manager.tasks.values() if t.status in ("queued", "downloading", "retrying"))
-            self._send_json({
-                "status": "ok",
-                "service": "apolo",
-                "version": __version__,
-                "active_tasks": active_count,
-                "total_tasks": len(self.task_manager.tasks),
-            })
+            active_count = sum(
+                1
+                for t in self.task_manager.tasks.values()
+                if t.status in ("queued", "downloading", "retrying")
+            )
+            self._send_json(
+                {
+                    "status": "ok",
+                    "service": "apolo",
+                    "version": __version__,
+                    "active_tasks": active_count,
+                    "total_tasks": len(self.task_manager.tasks),
+                }
+            )
             return
 
         if path == "/api/tasks":
@@ -327,7 +343,10 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
                 if not task:
                     self._send_json({"error": "Task not found"}, status=HTTPStatus.NOT_FOUND)
                 else:
-                    self._send_json({"error": f"Cannot cancel task in status '{task.status}'"}, status=HTTPStatus.BAD_REQUEST)
+                    self._send_json(
+                        {"error": f"Cannot cancel task in status '{task.status}'"},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
             return
 
         if path == "/api/download":
@@ -336,12 +355,16 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
                 body = self.rfile.read(length).decode("utf-8")
                 payload = json.loads(body) if body else {}
             except Exception as e:
-                self._send_json({"error": f"Invalid JSON payload: {e}"}, status=HTTPStatus.BAD_REQUEST)
+                self._send_json(
+                    {"error": f"Invalid JSON payload: {e}"}, status=HTTPStatus.BAD_REQUEST
+                )
                 return
 
             url = payload.get("url")
             if not url or not isinstance(url, str):
-                self._send_json({"error": "Missing or invalid 'url' field"}, status=HTTPStatus.BAD_REQUEST)
+                self._send_json(
+                    {"error": "Missing or invalid 'url' field"}, status=HTTPStatus.BAD_REQUEST
+                )
                 return
 
             origin = payload.get("origin")
@@ -363,7 +386,9 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
 
 
 class ApoloServer:
-    def __init__(self, host: str = "127.0.0.1", port: int = 4533, config: Optional[ApoloConfig] = None):
+    def __init__(
+        self, host: str = "127.0.0.1", port: int = 4533, config: ApoloConfig | None = None
+    ):
         self.host = host
         self.port = port
         self.config = config or load_config()

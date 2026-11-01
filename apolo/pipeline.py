@@ -1,7 +1,9 @@
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+
 import mutagen
 import requests
 
@@ -9,11 +11,11 @@ from apolo.audio.converter import AudioConverter
 from apolo.audio.downloader import AudioDownloader
 from apolo.config import ApoloConfig, load_config
 from apolo.constants import AUDIO_EXTENSIONS
+from apolo.library.organizer import LibraryOrganizer
 from apolo.lyrics.lrclib import LRCLIBProvider
 from apolo.metadata.matcher import MetadataMatcher
 from apolo.metadata.models import TrackMetadata
 from apolo.metadata.parsing import clean_track_title, extract_primary_artist
-from apolo.library.organizer import LibraryOrganizer
 from apolo.storage.cleanup import StorageCleaner
 from apolo.tagging.tagger import AudioTagger
 
@@ -36,13 +38,15 @@ def is_well_tagged(info: dict) -> bool:
             return False
 
     album = (info.get("album") or "").strip()
-    has_extra_meta = any([
-        info.get("track_number") is not None,
-        bool(info.get("date")),
-        bool(info.get("genre")),
-        bool(info.get("cover_art_data")),
-        bool(info.get("album_artist")),
-    ])
+    has_extra_meta = any(
+        [
+            info.get("track_number") is not None,
+            bool(info.get("date")),
+            bool(info.get("genre")),
+            bool(info.get("cover_art_data")),
+            bool(info.get("album_artist")),
+        ]
+    )
 
     # If has title, artist, album and at least one extra metadata field
     if album and album.lower() not in ["unknown", "unknown album"] and has_extra_meta:
@@ -56,7 +60,7 @@ def is_well_tagged(info: dict) -> bool:
 
 
 class ProcessingPipeline:
-    def __init__(self, config: Optional[ApoloConfig] = None):
+    def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
         self.downloader = AudioDownloader(self.config)
         self.matcher = MetadataMatcher(self.config)
@@ -68,19 +72,20 @@ class ProcessingPipeline:
     def process_url(
         self,
         url: str,
-        origin: Optional[str] = None,
-        suggested_title: Optional[str] = None,
+        origin: str | None = None,
+        suggested_title: str | None = None,
         dry_run: bool = False,
-        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        cancel_check: Optional[Callable[[], bool]] = None,
-        on_playlist_init: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None,
-        on_subtrack_status: Optional[Callable[[str, str, Optional[str], int, Optional[float]], None]] = None,
-        on_subtrack_progress: Optional[Callable[[str, float, str], None]] = None,
-        on_active_track: Optional[Callable[[int, int, str, Optional[str], float, str], None]] = None,
-        on_track_title: Optional[Callable[[str], None]] = None,
-    ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
+        candidate_selector: Callable[[list[tuple[float, TrackMetadata]], str], TrackMetadata | None]
+        | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+        on_playlist_init: Callable[[str, int, list[dict[str, Any]]], None] | None = None,
+        on_subtrack_status: Callable[[str, str, str | None, int, float | None], None] | None = None,
+        on_subtrack_progress: Callable[[str, float, str], None] | None = None,
+        on_active_track: Callable[[int, int, str, str | None, float, str], None] | None = None,
+        on_track_title: Callable[[str], None] | None = None,
+    ) -> list[tuple[Path, Path | None, TrackMetadata]]:
         """
         Downloads URL, matches metadata, gets synced lyrics, tags, and organizes to library.
         Returns list of (dest_audio_path, dest_lrc_path, metadata)
@@ -120,7 +125,12 @@ class ProcessingPipeline:
                 )
                 if ranked:
                     match = candidate_selector(ranked, search_query)
-                    if match and self.config.organization.embed_cover_art and match.cover_art_url and not match.cover_art_data:
+                    if (
+                        match
+                        and self.config.organization.embed_cover_art
+                        and match.cover_art_url
+                        and not match.cover_art_data
+                    ):
                         match.cover_art_data = self.matcher._download_cover(match.cover_art_url)
 
             if not match and candidate_selector is None:
@@ -175,7 +185,9 @@ class ProcessingPipeline:
                 on_track_title(f"{match.artist} - {match.title}")
 
             if on_progress:
-                on_progress("lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'...")
+                on_progress(
+                    "lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'..."
+                )
 
             synced_lyrics = self.lyrics_provider.get_synced_lyrics(
                 track_name=match.title,
@@ -187,7 +199,11 @@ class ProcessingPipeline:
 
             if dry_run:
                 dest_audio = self.organizer.get_destination_path(match)
-                dest_lrc = dest_audio.with_suffix(".lrc") if (self.config.organization.save_lrc_file and match.synced_lyrics) else None
+                dest_lrc = (
+                    dest_audio.with_suffix(".lrc")
+                    if (self.config.organization.save_lrc_file and match.synced_lyrics)
+                    else None
+                )
                 # Clean up downloaded temp file in dry-run
                 if opus_file.exists():
                     try:
@@ -220,11 +236,11 @@ class ProcessingPipeline:
         """
         return self.converter.convert_to_opus(input_file)
 
-    def find_sidecar_lrc(self, file_path: Path) -> Optional[Path]:
+    def find_sidecar_lrc(self, file_path: Path) -> Path | None:
         """Finds companion .lrc file next to audio file."""
         return StorageCleaner.find_sidecar_lrc(file_path)
 
-    def find_companion_cover(self, file_path: Path) -> Optional[Path]:
+    def find_companion_cover(self, file_path: Path) -> Path | None:
         """Finds track-specific or album cover image in the same directory."""
         return StorageCleaner.find_companion_cover(file_path)
 
@@ -232,13 +248,17 @@ class ProcessingPipeline:
         """Deletes track-specific sidecar files (.lrc, .jpg/.png) associated with file_path."""
         StorageCleaner.cleanup_source_file_artifacts(file_path)
 
-    def cleanup_processed_directory(self, dir_path: Path, root_boundary: Optional[Path] = None) -> None:
+    def cleanup_processed_directory(
+        self, dir_path: Path, root_boundary: Path | None = None
+    ) -> None:
         """
         Cleans up leftover images, lyrics, and junk files in dir_path if no audio files remain,
         and removes empty directories up to root_boundary.
         """
         protected = {self.config.directories.library_dir, self.config.directories.inbox_dir}
-        StorageCleaner.cleanup_processed_directory(dir_path, root_boundary=root_boundary, protected_dirs=protected)
+        StorageCleaner.cleanup_processed_directory(
+            dir_path, root_boundary=root_boundary, protected_dirs=protected
+        )
 
     def extract_file_info(self, file_path: Path) -> dict:
         """Extract existing title, artist, album, date, disc, track, origin, cover from file metadata or filename."""
@@ -268,6 +288,7 @@ class ProcessingPipeline:
                     raw_img = companion_cover.read_bytes()
                     max_size = getattr(self.config.organization, "max_cover_size", 1400)
                     from apolo.tagging.cover import CoverManager
+
                     cover_art_data = CoverManager.optimize_image_bytes(raw_img, max_dim=max_size)
                 except Exception:
                     pass
@@ -276,7 +297,11 @@ class ProcessingPipeline:
         sidecar_lrc = self.find_sidecar_lrc(file_path)
         if sidecar_lrc:
             try:
-                lrc_text = sidecar_lrc.read_text(encoding="utf-8", errors="ignore").strip().lstrip("\ufeff")
+                lrc_text = (
+                    sidecar_lrc.read_text(encoding="utf-8", errors="ignore")
+                    .strip()
+                    .lstrip("\ufeff")
+                )
                 if lrc_text:
                     raw_lyrics = lrc_text
             except Exception:
@@ -289,6 +314,7 @@ class ProcessingPipeline:
                 tags = getattr(audio, "tags", None)
                 if tags:
                     has_native_tags = True
+
                     def safe_get_tag(keys):
                         for k in keys:
                             try:
@@ -308,8 +334,12 @@ class ProcessingPipeline:
                     raw_album = safe_get_tag(["ALBUM", "album", "TALB", "\xa9alb", "©alb"])
                     raw_date = safe_get_tag(["DATE", "date", "TDRC", "TYER", "\xa9day", "©day"])
                     raw_genre = safe_get_tag(["GENRE", "genre", "TCON", "\xa9gen", "©gen"])
-                    raw_origin = safe_get_tag(["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"])
-                    tag_lyrics = safe_get_tag(["LYRICS", "lyrics", "USLT", "UNSYNCEDLYRICS", "\xa9lyr", "©lyr"])
+                    raw_origin = safe_get_tag(
+                        ["ORIGIN", "origin", "SOURCE", "source", "ORIGEN", "origen"]
+                    )
+                    tag_lyrics = safe_get_tag(
+                        ["LYRICS", "lyrics", "USLT", "UNSYNCEDLYRICS", "\xa9lyr", "©lyr"]
+                    )
                     if tag_lyrics:
                         raw_lyrics = tag_lyrics
 
@@ -333,7 +363,9 @@ class ProcessingPipeline:
                     except Exception:
                         pass
                     if raw_track_total is None:
-                        total_str = safe_get_tag(["TRACKTOTAL", "tracktotal", "TOTALTRACKS", "totaltracks"])
+                        total_str = safe_get_tag(
+                            ["TRACKTOTAL", "tracktotal", "TOTALTRACKS", "totaltracks"]
+                        )
                         if total_str:
                             try:
                                 raw_track_total = int(total_str.split("/")[0])
@@ -360,7 +392,9 @@ class ProcessingPipeline:
                     except Exception:
                         pass
                     if raw_disc_total is None:
-                        dtotal_str = safe_get_tag(["DISCTOTAL", "disctotal", "TOTALDISCS", "totaldiscs"])
+                        dtotal_str = safe_get_tag(
+                            ["DISCTOTAL", "disctotal", "TOTALDISCS", "totaldiscs"]
+                        )
                         if dtotal_str:
                             try:
                                 raw_disc_total = int(dtotal_str.split("/")[0])
@@ -377,9 +411,24 @@ class ProcessingPipeline:
                         pass
 
                     raw_controlled_anomaly = False
-                    anomaly_str = safe_get_tag(["CONTROLLED_ANOMALY", "controlled_anomaly", "PARTIAL_ALBUM", "partial_album", "ANOMALIA_CONTROLADA", "anomalia_controlada"])
+                    anomaly_str = safe_get_tag(
+                        [
+                            "CONTROLLED_ANOMALY",
+                            "controlled_anomaly",
+                            "PARTIAL_ALBUM",
+                            "partial_album",
+                            "ANOMALIA_CONTROLADA",
+                            "anomalia_controlada",
+                        ]
+                    )
                     if anomaly_str:
-                        raw_controlled_anomaly = anomaly_str.strip().lower() in ["1", "true", "yes", "si", "sí"]
+                        raw_controlled_anomaly = anomaly_str.strip().lower() in [
+                            "1",
+                            "true",
+                            "yes",
+                            "si",
+                            "sí",
+                        ]
 
         except Exception:
             pass
@@ -387,12 +436,38 @@ class ProcessingPipeline:
         extra_tags = {}
         if has_native_tags and audio and getattr(audio, "tags", None):
             standard_handled = {
-                "TITLE", "TIT2", "ARTIST", "TPE1", "ALBUMARTIST", "TPE2",
-                "ALBUM", "TALB", "DATE", "TDRC", "TYER", "GENRE", "TCON",
-                "ORIGIN", "SOURCE", "ORIGEN", "LYRICS", "USLT", "UNSYNCEDLYRICS",
-                "TRACKNUMBER", "TRCK", "TRACKTOTAL", "TOTALTRACKS",
-                "DISCNUMBER", "TPOS", "DISCTOTAL", "TOTALDISCS",
-                "COMPILATION", "TCMP", "METADATA_BLOCK_PICTURE", "APIC", "COVR"
+                "TITLE",
+                "TIT2",
+                "ARTIST",
+                "TPE1",
+                "ALBUMARTIST",
+                "TPE2",
+                "ALBUM",
+                "TALB",
+                "DATE",
+                "TDRC",
+                "TYER",
+                "GENRE",
+                "TCON",
+                "ORIGIN",
+                "SOURCE",
+                "ORIGEN",
+                "LYRICS",
+                "USLT",
+                "UNSYNCEDLYRICS",
+                "TRACKNUMBER",
+                "TRCK",
+                "TRACKTOTAL",
+                "TOTALTRACKS",
+                "DISCNUMBER",
+                "TPOS",
+                "DISCTOTAL",
+                "TOTALDISCS",
+                "COMPILATION",
+                "TCMP",
+                "METADATA_BLOCK_PICTURE",
+                "APIC",
+                "COVR",
             }
             try:
                 for k in audio.tags.keys():
@@ -448,13 +523,14 @@ class ProcessingPipeline:
     def process_file(
         self,
         file_path: Path,
-        origin: Optional[str] = None,
+        origin: str | None = None,
         force_rematch: bool = False,
         dry_run: bool = False,
-        preserve_lossless: Optional[bool] = None,
-        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-    ) -> Optional[Tuple[Path, Optional[Path], TrackMetadata]]:
+        preserve_lossless: bool | None = None,
+        candidate_selector: Callable[[list[tuple[float, TrackMetadata]], str], TrackMetadata | None]
+        | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> tuple[Path, Path | None, TrackMetadata] | None:
         """Processes a single local audio or video file."""
         if not file_path.exists() or file_path.suffix.lower() not in AUDIO_EXTENSIONS:
             return None
@@ -467,7 +543,11 @@ class ProcessingPipeline:
         raw_artist = info["artist"]
         duration = info["duration"]
 
-        well_tagged = is_well_tagged(info) and self.config.downloader.preserve_existing_tags and not force_rematch
+        well_tagged = (
+            is_well_tagged(info)
+            and self.config.downloader.preserve_existing_tags
+            and not force_rematch
+        )
 
         if well_tagged:
             # Preserve existing metadata completely without online provider mutations
@@ -505,7 +585,12 @@ class ProcessingPipeline:
                 )
                 if ranked:
                     match = candidate_selector(ranked, search_query)
-                    if match and self.config.organization.embed_cover_art and match.cover_art_url and not match.cover_art_data:
+                    if (
+                        match
+                        and self.config.organization.embed_cover_art
+                        and match.cover_art_url
+                        and not match.cover_art_data
+                    ):
                         match.cover_art_data = self.matcher._download_cover(match.cover_art_url)
 
             if not match and candidate_selector is None:
@@ -558,7 +643,9 @@ class ProcessingPipeline:
         # Fetch synced lyrics if missing
         if not match.synced_lyrics:
             if on_progress:
-                on_progress("lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'...")
+                on_progress(
+                    "lyrics", f"Fetching synced lyrics for '{match.artist} - {match.title}'..."
+                )
 
             synced_lyrics = self.lyrics_provider.get_synced_lyrics(
                 track_name=match.title,
@@ -568,15 +655,20 @@ class ProcessingPipeline:
             )
             match.synced_lyrics = synced_lyrics
 
-        should_preserve_flac = (
-            file_path.suffix.lower() == ".flac"
-            and (preserve_lossless if preserve_lossless is not None else getattr(self.config.downloader, "preserve_lossless", False))
+        should_preserve_flac = file_path.suffix.lower() == ".flac" and (
+            preserve_lossless
+            if preserve_lossless is not None
+            else getattr(self.config.downloader, "preserve_lossless", False)
         )
         ext = ".flac" if should_preserve_flac else ".opus"
 
         if dry_run:
             dest_audio = self.organizer.get_destination_path(match, extension=ext)
-            dest_lrc = dest_audio.with_suffix(".lrc") if (self.config.organization.save_lrc_file and match.synced_lyrics) else None
+            dest_lrc = (
+                dest_audio.with_suffix(".lrc")
+                if (self.config.organization.save_lrc_file and match.synced_lyrics)
+                else None
+            )
             return dest_audio, dest_lrc, match
 
         if should_preserve_flac:
@@ -584,10 +676,16 @@ class ProcessingPipeline:
                 on_progress("tagging", f"Tagging FLAC {file_path.name}...")
             self.tagger.tag_flac(file_path, match)
             if on_progress:
-                on_progress("organizing", f"Placing in library: {match.artist} - {match.title} (FLAC)...")
-            dest_audio, dest_lrc = self.organizer.organize_track(file_path, match, extension=".flac")
+                on_progress(
+                    "organizing", f"Placing in library: {match.artist} - {match.title} (FLAC)..."
+                )
+            dest_audio, dest_lrc = self.organizer.organize_track(
+                file_path, match, extension=".flac"
+            )
             self._cleanup_source_file_artifacts(file_path)
-            self.cleanup_processed_directory(file_path.parent, root_boundary=self.config.directories.inbox_dir)
+            self.cleanup_processed_directory(
+                file_path.parent, root_boundary=self.config.directories.inbox_dir
+            )
             return dest_audio, dest_lrc, match
 
         # Convert to high-quality .opus if not already .opus
@@ -611,26 +709,31 @@ class ProcessingPipeline:
                 pass
 
         self._cleanup_source_file_artifacts(file_path)
-        self.cleanup_processed_directory(file_path.parent, root_boundary=self.config.directories.inbox_dir)
+        self.cleanup_processed_directory(
+            file_path.parent, root_boundary=self.config.directories.inbox_dir
+        )
 
         return dest_audio, dest_lrc, match
 
     def process_directory(
         self,
         directory: Path,
-        origin: Optional[str] = None,
+        origin: str | None = None,
         force_rematch: bool = False,
         dry_run: bool = False,
-        preserve_lossless: Optional[bool] = None,
-        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-    ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
+        preserve_lossless: bool | None = None,
+        candidate_selector: Callable[[list[tuple[float, TrackMetadata]], str], TrackMetadata | None]
+        | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> list[tuple[Path, Path | None, TrackMetadata]]:
         """Recursively processes all audio files in a directory."""
         results = []
         if not directory.exists() or not directory.is_dir():
             return results
 
-        files = [p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+        files = [
+            p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+        ]
         source_dirs = {p.parent for p in files}
 
         for file_path in sorted(files):
@@ -648,7 +751,8 @@ class ProcessingPipeline:
 
         # Check album consensus on processed results
         from apolo.utils import infer_consensus_album_artist, infer_consensus_date
-        albums_grouped: Dict[Tuple[str, str], List[Tuple[Path, Optional[Path], TrackMetadata]]] = {}
+
+        albums_grouped: dict[tuple[str, str], list[tuple[Path, Path | None, TrackMetadata]]] = {}
         for r in results:
             alb = r[2].album
             if alb and alb.lower() not in ["single", "singles", "unknown"]:
@@ -687,14 +791,15 @@ class ProcessingPipeline:
 
     def process_paths(
         self,
-        paths: List[Path],
-        origin: Optional[str] = None,
+        paths: list[Path],
+        origin: str | None = None,
         force_rematch: bool = False,
         dry_run: bool = False,
-        preserve_lossless: Optional[bool] = None,
-        candidate_selector: Optional[Callable[[List[Tuple[float, TrackMetadata]], str], Optional[TrackMetadata]]] = None,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-    ) -> List[Tuple[Path, Optional[Path], TrackMetadata]]:
+        preserve_lossless: bool | None = None,
+        candidate_selector: Callable[[list[tuple[float, TrackMetadata]], str], TrackMetadata | None]
+        | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> list[tuple[Path, Path | None, TrackMetadata]]:
         """Recursively processes all files and directories in the provided list."""
         results = []
         for path in paths:
@@ -726,13 +831,12 @@ class ProcessingPipeline:
                     results.append(res)
         return results
 
-
     def reorganize_paths(
         self,
-        paths: Optional[List[Path]] = None,
+        paths: list[Path] | None = None,
         dry_run: bool = False,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-    ) -> List[Tuple[Path, Path]]:
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> list[tuple[Path, Path]]:
         """
         Scans all files in given paths (or library_dir if None/empty), recalculates paths based on current rules,
         moves files/lyrics that are misplaced, and removes empty directories.
@@ -742,7 +846,11 @@ class ProcessingPipeline:
             target_dir = self.config.directories.library_dir
             if not target_dir.exists():
                 return []
-            candidate_files = [p for p in target_dir.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+            candidate_files = [
+                p
+                for p in target_dir.rglob("*")
+                if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+            ]
         else:
             candidate_files = []
             for p in paths:
@@ -751,7 +859,13 @@ class ProcessingPipeline:
                 if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
                     candidate_files.append(p)
                 elif p.is_dir():
-                    candidate_files.extend([f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS])
+                    candidate_files.extend(
+                        [
+                            f
+                            for f in p.rglob("*")
+                            if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+                        ]
+                    )
 
         # Deduplicate and sort
         seen = set()
@@ -786,11 +900,13 @@ class ProcessingPipeline:
             expected_dest = self.organizer.get_destination_path(meta, extension=ext)
             if file_path.resolve() != expected_dest.resolve():
                 if on_progress:
-                    on_progress("moving", f"Relocating: {file_path.name} -> {expected_dest.parent.name}")
+                    on_progress(
+                        "moving", f"Relocating: {file_path.name} -> {expected_dest.parent.name}"
+                    )
 
                 if not dry_run:
                     expected_dest.parent.mkdir(parents=True, exist_ok=True)
-                    
+
                     # Move companion .lrc if exists
                     old_lrc = file_path.with_suffix(".lrc")
                     new_lrc = expected_dest.with_suffix(".lrc")
@@ -802,9 +918,20 @@ class ProcessingPipeline:
                     # Move companion cover images if old folder has no more audio files
                     old_parent = file_path.parent
                     if old_parent.exists() and old_parent != expected_dest.parent:
-                        remaining_audio = [p for p in old_parent.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+                        remaining_audio = [
+                            p
+                            for p in old_parent.iterdir()
+                            if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+                        ]
                         if not remaining_audio:
-                            for img_name in ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"]:
+                            for img_name in [
+                                "cover.jpg",
+                                "cover.png",
+                                "folder.jpg",
+                                "folder.png",
+                                "front.jpg",
+                                "front.png",
+                            ]:
                                 old_img = old_parent / img_name
                                 new_img = expected_dest.parent / img_name
                                 if old_img.exists() and not new_img.exists():
@@ -831,9 +958,9 @@ class ProcessingPipeline:
 
     def reorganize_library(
         self,
-        library_dir: Optional[Path] = None,
+        library_dir: Path | None = None,
         dry_run: bool = False,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-    ) -> List[Tuple[Path, Path]]:
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> list[tuple[Path, Path]]:
         paths = [library_dir] if library_dir else None
         return self.reorganize_paths(paths, dry_run=dry_run, on_progress=on_progress)

@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import Optional, Set
+
 from apolo.constants import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, JUNK_EXTENSIONS, JUNK_NAMES
 
 
 class StorageCleaner:
     @staticmethod
-    def find_sidecar_lrc(file_path: Path) -> Optional[Path]:
+    def find_sidecar_lrc(file_path: Path) -> Path | None:
         """Finds companion .lrc file next to audio file."""
         if not file_path.parent.exists():
             return None
@@ -14,14 +14,18 @@ class StorageCleaner:
             return lrc_candidate
         try:
             for item in file_path.parent.iterdir():
-                if item.is_file() and item.suffix.lower() == ".lrc" and item.stem.lower() == file_path.stem.lower():
+                if (
+                    item.is_file()
+                    and item.suffix.lower() == ".lrc"
+                    and item.stem.lower() == file_path.stem.lower()
+                ):
                     return item
         except Exception:
             pass
         return None
 
     @staticmethod
-    def find_companion_cover(file_path: Path) -> Optional[Path]:
+    def find_companion_cover(file_path: Path) -> Path | None:
         """Finds track-specific or album cover image in the same directory."""
         parent = file_path.parent
         if not parent.exists() or not parent.is_dir():
@@ -34,7 +38,11 @@ class StorageCleaner:
                 return sidecar
         try:
             for item in parent.iterdir():
-                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS and item.stem.lower() == file_path.stem.lower():
+                if (
+                    item.is_file()
+                    and item.suffix.lower() in IMAGE_EXTENSIONS
+                    and item.stem.lower() == file_path.stem.lower()
+                ):
                     return item
         except Exception:
             pass
@@ -56,7 +64,11 @@ class StorageCleaner:
 
         # 3. If there is only one image in the directory, use it
         try:
-            images = [item for item in parent.iterdir() if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS]
+            images = [
+                item
+                for item in parent.iterdir()
+                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS
+            ]
             if len(images) == 1:
                 return images[0]
         except Exception:
@@ -84,7 +96,11 @@ class StorageCleaner:
         if file_path.parent.exists():
             try:
                 for item in file_path.parent.iterdir():
-                    if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS and item.stem.lower() == file_path.stem.lower():
+                    if (
+                        item.is_file()
+                        and item.suffix.lower() in IMAGE_EXTENSIONS
+                        and item.stem.lower() == file_path.stem.lower()
+                    ):
                         item.unlink()
             except Exception:
                 pass
@@ -92,8 +108,8 @@ class StorageCleaner:
     @staticmethod
     def cleanup_processed_directory(
         dir_path: Path,
-        root_boundary: Optional[Path] = None,
-        protected_dirs: Optional[Set[Path]] = None,
+        root_boundary: Path | None = None,
+        protected_dirs: set[Path] | None = None,
     ) -> None:
         """
         Cleans up leftover images, lyrics, and junk files in dir_path if no audio files remain,
@@ -103,7 +119,9 @@ class StorageCleaner:
             return
 
         # Check if any audio files still exist in this directory or subdirectories
-        remaining_audio = [p for p in dir_path.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+        remaining_audio = [
+            p for p in dir_path.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+        ]
         if remaining_audio:
             return
 
@@ -113,7 +131,12 @@ class StorageCleaner:
                 if item.is_file():
                     ext = item.suffix.lower()
                     name = item.name.lower()
-                    if ext in IMAGE_EXTENSIONS or ext == ".lrc" or ext in JUNK_EXTENSIONS or name in JUNK_NAMES:
+                    if (
+                        ext in IMAGE_EXTENSIONS
+                        or ext == ".lrc"
+                        or ext in JUNK_EXTENSIONS
+                        or name in JUNK_NAMES
+                    ):
                         try:
                             item.unlink()
                         except Exception:
@@ -123,7 +146,11 @@ class StorageCleaner:
 
         # Remove empty subdirectories bottom-up
         try:
-            subdirs = sorted([d for d in dir_path.rglob("*") if d.is_dir()], key=lambda p: len(p.parts), reverse=True)
+            subdirs = sorted(
+                [d for d in dir_path.rglob("*") if d.is_dir()],
+                key=lambda p: len(p.parts),
+                reverse=True,
+            )
             for sub in subdirs:
                 if sub.exists() and not any(sub.iterdir()):
                     try:

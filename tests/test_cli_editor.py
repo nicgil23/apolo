@@ -1,8 +1,9 @@
 import io
 import subprocess
 from pathlib import Path
-from PIL import Image
+
 from mutagen.oggopus import OggOpus
+from PIL import Image
 from typer.testing import CliRunner
 
 from apolo.cli import app
@@ -10,7 +11,9 @@ from apolo.metadata.models import TrackMetadata
 from apolo.tagging.tagger import AudioTagger
 
 
-def create_dummy_opus(output_path: Path, title: str = "Original Title", artist: str = "Original Artist"):
+def create_dummy_opus(
+    output_path: Path, title: str = "Original Title", artist: str = "Original Artist"
+):
     """Generates a 1-second silence Opus file with basic metadata."""
     cmd = [
         "ffmpeg",
@@ -77,13 +80,19 @@ def test_cli_set_command(tmp_path):
     create_dummy_opus(opus_file)
 
     # Update title and year via CLI
-    result = runner.invoke(app, [
-        "set",
-        str(opus_file),
-        "--title", "New Shiny Title",
-        "--year", "2025",
-        "--genre", "Electronic",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "set",
+            str(opus_file),
+            "--title",
+            "New Shiny Title",
+            "--year",
+            "2025",
+            "--genre",
+            "Electronic",
+        ],
+    )
     assert result.exit_code == 0
     assert "New Shiny Title" in result.stdout
 
@@ -100,12 +109,16 @@ def test_cli_set_dry_run(tmp_path):
     opus_file = tmp_path / "test_set_dry.opus"
     create_dummy_opus(opus_file, title="Untouched Title")
 
-    result = runner.invoke(app, [
-        "set",
-        str(opus_file),
-        "--title", "Modified Title",
-        "--dry-run",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "set",
+            str(opus_file),
+            "--title",
+            "Modified Title",
+            "--dry-run",
+        ],
+    )
     assert result.exit_code == 0
     assert "DRY-RUN" in result.stdout
 
@@ -119,11 +132,16 @@ def test_cli_edit_replace_and_regex(tmp_path):
     create_dummy_opus(opus_file, title="Song Name (Official Video) [Remastered]")
 
     # Use regex to clean video and remaster tags
-    result = runner.invoke(app, [
-        "edit",
-        str(opus_file),
-        "--regex-title", r"\s*[\(\[][^)\]]*(Official|Remastered)[^)\]]*[\)\]]", "",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "edit",
+            str(opus_file),
+            "--regex-title",
+            r"\s*[\(\[][^)\]]*(Official|Remastered)[^)\]]*[\)\]]",
+            "",
+        ],
+    )
     assert result.exit_code == 0
 
     audio = OggOpus(opus_file)
@@ -135,12 +153,17 @@ def test_cli_edit_dry_run(tmp_path):
     opus_file = tmp_path / "test_edit_dry.opus"
     create_dummy_opus(opus_file, title="Old Title")
 
-    result = runner.invoke(app, [
-        "edit",
-        str(opus_file),
-        "--replace-title", "Old", "New",
-        "--dry-run",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "edit",
+            str(opus_file),
+            "--replace-title",
+            "Old",
+            "New",
+            "--dry-run",
+        ],
+    )
     assert result.exit_code == 0
     assert "DRY-RUN" in result.stdout
 

@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+
 from rich.console import Console
 
 from apolo.tagging.inspector import inspect_track

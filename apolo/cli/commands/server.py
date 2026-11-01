@@ -9,7 +9,9 @@ from apolo.services.server import ApoloServer
 def register(app: typer.Typer) -> None:
     @app.command(name="serve")
     def serve(
-        host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host address to bind the API server to"),
+        host: str = typer.Option(
+            "127.0.0.1", "--host", "-h", help="Host address to bind the API server to"
+        ),
         port: int = typer.Option(4533, "--port", "-p", help="Port to listen on for REST requests"),
     ):
         """

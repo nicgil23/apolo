@@ -1,4 +1,3 @@
-from typing import List
 import requests
 
 from apolo.metadata.models import TrackMetadata
@@ -12,7 +11,7 @@ class DeezerProvider:
     def __init__(self, timeout: int = 10):
         self.timeout = timeout
 
-    def search(self, query: str, limit: int = 5) -> List[TrackMetadata]:
+    def search(self, query: str, limit: int = 5) -> list[TrackMetadata]:
         try:
             params = {"q": query, "limit": limit}
             resp = requests.get(self.SEARCH_URL, params=params, timeout=self.timeout)
@@ -20,7 +19,7 @@ class DeezerProvider:
                 return []
 
             data = resp.json()
-            results: List[TrackMetadata] = []
+            results: list[TrackMetadata] = []
 
             for item in data.get("data", []):
                 title = item.get("title_short") or item.get("title")
@@ -34,7 +33,11 @@ class DeezerProvider:
                 album_title = album_obj.get("title")
                 album_id = album_obj.get("id")
 
-                cover_url = album_obj.get("cover_xl") or album_obj.get("cover_big") or album_obj.get("cover_medium")
+                cover_url = (
+                    album_obj.get("cover_xl")
+                    or album_obj.get("cover_big")
+                    or album_obj.get("cover_medium")
+                )
                 duration = float(item.get("duration", 0)) or None
 
                 release_date = None
@@ -44,14 +47,16 @@ class DeezerProvider:
                 disk_number = item.get("disk_number")
 
                 album_artist = artist
-                main_artists: List[str] = []
-                featured_artists: List[str] = []
-                all_artists: List[str] = []
+                main_artists: list[str] = []
+                featured_artists: list[str] = []
+                all_artists: list[str] = []
 
                 # Fetch extra track & album details
                 if track_id:
                     try:
-                        trk_resp = requests.get(f"{self.TRACK_URL}/{track_id}", timeout=self.timeout)
+                        trk_resp = requests.get(
+                            f"{self.TRACK_URL}/{track_id}", timeout=self.timeout
+                        )
                         if trk_resp.status_code == 200:
                             trk_data = trk_resp.json()
                             track_position = trk_data.get("track_position") or track_position
@@ -76,7 +81,9 @@ class DeezerProvider:
 
                 if album_id:
                     try:
-                        alb_resp = requests.get(f"{self.ALBUM_URL}/{album_id}", timeout=self.timeout)
+                        alb_resp = requests.get(
+                            f"{self.ALBUM_URL}/{album_id}", timeout=self.timeout
+                        )
                         if alb_resp.status_code == 200:
                             alb_data = alb_resp.json()
                             if not release_date:
@@ -92,6 +99,7 @@ class DeezerProvider:
                         pass
 
                 from apolo.utils import parse_artists
+
                 if not main_artists and not featured_artists:
                     m, f, a, formatted_artist = parse_artists(artist, title)
                     main_artists = m
@@ -101,7 +109,8 @@ class DeezerProvider:
                     if not main_artists and artist:
                         main_artists = [artist]
                     _, _, _, formatted_artist = parse_artists(
-                        " & ".join(main_artists) + (f" feat. {' & '.join(featured_artists)}" if featured_artists else ""),
+                        " & ".join(main_artists)
+                        + (f" feat. {' & '.join(featured_artists)}" if featured_artists else ""),
                         title,
                     )
 
@@ -112,7 +121,9 @@ class DeezerProvider:
                     main_artists=main_artists or ([artist] if artist else []),
                     featured_artists=featured_artists,
                     album_artist=album_artist or (main_artists[0] if main_artists else artist),
-                    album_artists=[album_artist] if album_artist else ([main_artists[0]] if main_artists else []),
+                    album_artists=[album_artist]
+                    if album_artist
+                    else ([main_artists[0]] if main_artists else []),
                     album=album_title,
                     track_number=track_position,
                     track_total=track_total,

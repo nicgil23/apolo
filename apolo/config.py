@@ -2,7 +2,6 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 
 @dataclass
@@ -45,7 +44,7 @@ class ProvidersConfig:
 
 @dataclass
 class DoctorConfig:
-    controlled_anomalies: List[str] = field(default_factory=list)
+    controlled_anomalies: list[str] = field(default_factory=list)
     show_controlled_anomalies: bool = True
     show_missing_lyrics: bool = True
 
@@ -64,7 +63,7 @@ def get_config_path() -> Path:
     return config_dir / "config.toml"
 
 
-def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
+def load_config(config_path: Path | None = None) -> ApoloConfig:
     target_path = config_path or get_config_path()
     if not target_path.exists():
         return ApoloConfig()
@@ -88,7 +87,9 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
     )
 
     organization = OrganizationConfig(
-        path_template=org_data.get("path_template", "{artist}/{album} ({date})/{track:02d} - {title}.opus"),
+        path_template=org_data.get(
+            "path_template", "{artist}/{album} ({date})/{track:02d} - {title}.opus"
+        ),
         save_lrc_file=org_data.get("save_lrc_file", True),
         embed_cover_art=org_data.get("embed_cover_art", True),
         max_cover_size=org_data.get("max_cover_size", 1400),
@@ -115,8 +116,13 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
         synced_lyrics_only=prov_data.get("synced_lyrics_only", True),
     )
 
-    controlled = [str(x).strip() for x in doc_data.get("controlled_anomalies", []) if str(x).strip()]
-    show_controlled = doc_data.get("show_controlled_anomalies", doc_data.get("show_controlled", doc_data.get("show_anomalies", True)))
+    controlled = [
+        str(x).strip() for x in doc_data.get("controlled_anomalies", []) if str(x).strip()
+    ]
+    show_controlled = doc_data.get(
+        "show_controlled_anomalies",
+        doc_data.get("show_controlled", doc_data.get("show_anomalies", True)),
+    )
     show_lyrics = doc_data.get("show_missing_lyrics", doc_data.get("show_lyrics", True))
     doctor = DoctorConfig(
         controlled_anomalies=controlled,
@@ -133,7 +139,7 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
     )
 
 
-def save_doctor_controlled_anomalies(anomalies: List[str], config_path: Optional[Path] = None) -> Path:
+def save_doctor_controlled_anomalies(anomalies: list[str], config_path: Path | None = None) -> Path:
     target_path = config_path or get_config_path()
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -149,9 +155,14 @@ def save_doctor_controlled_anomalies(anomalies: List[str], config_path: Optional
             unique_items.append(c)
 
     formatted_items = ",\n".join(f'    "{item}"' for item in unique_items)
-    anomalies_block = f"controlled_anomalies = [\n{formatted_items}\n]" if unique_items else "controlled_anomalies = []"
+    anomalies_block = (
+        f"controlled_anomalies = [\n{formatted_items}\n]"
+        if unique_items
+        else "controlled_anomalies = []"
+    )
 
     import re
+
     if re.search(r"^\[doctor\]", content, flags=re.MULTILINE):
         # If controlled_anomalies setting already exists under [doctor], replace only that block
         if re.search(r"controlled_anomalies\s*=\s*\[[^\]]*\]", content):
@@ -167,4 +178,3 @@ def save_doctor_controlled_anomalies(anomalies: List[str], config_path: Optional
         target_path.write_text(new_content.strip() + "\n", encoding="utf-8")
 
     return target_path
-

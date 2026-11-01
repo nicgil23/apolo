@@ -1,13 +1,15 @@
 import math
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, load_config
 from apolo.constants import AUDIO_EXTENSIONS
+from apolo.system import SystemEnvironment
 
 
 @dataclass
@@ -31,11 +33,11 @@ class LoudnessResult:
 
 
 class LoudnessScanner:
-    def __init__(self, config: Optional[ApoloConfig] = None):
+    def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
 
     @staticmethod
-    def scan_file(file_path: Path, target_lufs: float = -18.0) -> Optional[LoudnessResult]:
+    def scan_file(file_path: Path, target_lufs: float = -18.0) -> LoudnessResult | None:
         """
         Analyzes audio loudness using ffmpeg ebur128 filter.
         Returns LoudnessResult with calculated gain against target_lufs.
@@ -43,8 +45,12 @@ class LoudnessScanner:
         if not file_path.exists():
             return None
 
+        ffmpeg_bin = SystemEnvironment.get_binary_path("ffmpeg")
+        if not ffmpeg_bin:
+            return None
+
         cmd = [
-            "ffmpeg",
+            str(ffmpeg_bin),
             "-nostats",
             "-i",
             str(file_path),
@@ -56,7 +62,9 @@ class LoudnessScanner:
         ]
 
         try:
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, check=True)
+            res = subprocess.run(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, check=True
+            )
             output = res.stderr
         except Exception:
             return None
@@ -115,29 +123,37 @@ class LoudnessScanner:
 
     def scan_and_tag_paths(
         self,
-        paths: List[Path],
+        paths: list[Path],
         target_lufs: float = -18.0,
         dry_run: bool = False,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-    ) -> List[Tuple[Path, LoudnessResult]]:
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> list[tuple[Path, LoudnessResult]]:
         """
         Scans all audio files in paths, computes loudness, and writes R128/ReplayGain tags.
         """
-        target_files: List[Path] = []
+        target_files: list[Path] = []
         for p in paths:
             if not p.exists():
                 continue
             if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
                 target_files.append(p)
             elif p.is_dir():
-                target_files.extend([f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS])
+                target_files.extend(
+                    [
+                        f
+                        for f in p.rglob("*")
+                        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+                    ]
+                )
 
         target_files = sorted(list(set(target_files)))
         results = []
 
         for idx, f in enumerate(target_files, 1):
             if on_progress:
-                on_progress("scanning", f"Measuring loudness ({idx}/{len(target_files)}): {f.name}...")
+                on_progress(
+                    "scanning", f"Measuring loudness ({idx}/{len(target_files)}): {f.name}..."
+                )
 
             loud_res = self.scan_file(f, target_lufs=target_lufs)
             if loud_res:
