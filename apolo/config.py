@@ -2,7 +2,7 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -44,11 +44,19 @@ class ProvidersConfig:
 
 
 @dataclass
+class DoctorConfig:
+    controlled_anomalies: List[str] = field(default_factory=list)
+    show_controlled_anomalies: bool = True
+    show_missing_lyrics: bool = True
+
+
+@dataclass
 class ApoloConfig:
     directories: DirectoriesConfig = field(default_factory=DirectoriesConfig)
     organization: OrganizationConfig = field(default_factory=OrganizationConfig)
     downloader: DownloaderConfig = field(default_factory=DownloaderConfig)
     providers: ProvidersConfig = field(default_factory=ProvidersConfig)
+    doctor: DoctorConfig = field(default_factory=DoctorConfig)
 
 
 def get_config_path() -> Path:
@@ -71,6 +79,7 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
     org_data = data.get("organization", {})
     dl_data = data.get("downloader", {})
     prov_data = data.get("providers", {})
+    doc_data = data.get("doctor", {})
 
     directories = DirectoriesConfig(
         library_dir=Path(os.path.expanduser(dirs_data.get("library_dir", "~/Music/Apolo"))),
@@ -106,10 +115,56 @@ def load_config(config_path: Optional[Path] = None) -> ApoloConfig:
         synced_lyrics_only=prov_data.get("synced_lyrics_only", True),
     )
 
+    controlled = [str(x).strip() for x in doc_data.get("controlled_anomalies", []) if str(x).strip()]
+    show_controlled = doc_data.get("show_controlled_anomalies", doc_data.get("show_controlled", doc_data.get("show_anomalies", True)))
+    show_lyrics = doc_data.get("show_missing_lyrics", doc_data.get("show_lyrics", True))
+    doctor = DoctorConfig(
+        controlled_anomalies=controlled,
+        show_controlled_anomalies=bool(show_controlled),
+        show_missing_lyrics=bool(show_lyrics),
+    )
+
     return ApoloConfig(
         directories=directories,
         organization=organization,
         downloader=downloader,
         providers=providers,
+        doctor=doctor,
     )
+
+
+def save_doctor_controlled_anomalies(anomalies: List[str], config_path: Optional[Path] = None) -> Path:
+    target_path = config_path or get_config_path()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    content = ""
+    if target_path.exists():
+        content = target_path.read_text(encoding="utf-8")
+
+    # Format list
+    unique_items = []
+    for it in anomalies:
+        c = it.strip()
+        if c and c not in unique_items:
+            unique_items.append(c)
+
+    formatted_items = ",\n".join(f'    "{item}"' for item in unique_items)
+    anomalies_block = f"controlled_anomalies = [\n{formatted_items}\n]" if unique_items else "controlled_anomalies = []"
+
+    import re
+    if re.search(r"^\[doctor\]", content, flags=re.MULTILINE):
+        # If controlled_anomalies setting already exists under [doctor], replace only that block
+        if re.search(r"controlled_anomalies\s*=\s*\[[^\]]*\]", content):
+            new_content = re.sub(r"controlled_anomalies\s*=\s*\[[^\]]*\]", anomalies_block, content)
+        else:
+            # Insert controlled_anomalies right under [doctor] header
+            new_content = re.sub(r"(\[doctor\]\s*)", rf"\1{anomalies_block}\n", content, count=1)
+        target_path.write_text(new_content, encoding="utf-8")
+    else:
+        # Append [doctor] section
+        doctor_section = f"[doctor]\n{anomalies_block}\n"
+        new_content = content.rstrip() + "\n\n" + doctor_section
+        target_path.write_text(new_content.strip() + "\n", encoding="utf-8")
+
+    return target_path
 

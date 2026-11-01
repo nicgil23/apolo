@@ -1,12 +1,12 @@
 import io
 import subprocess
 from pathlib import Path
+from typing import Optional
 from PIL import Image
-import pytest
 from typer.testing import CliRunner
 
 from apolo.cli import app
-from apolo.config import ApoloConfig, DirectoriesConfig
+from apolo.config import ApoloConfig, DirectoriesConfig, load_config
 from apolo.doctor import LibraryDoctor
 from apolo.metadata.models import TrackMetadata
 from apolo.tagger import AudioTagger
@@ -156,4 +156,246 @@ def test_doctor_multi_disc_completeness(tmp_path):
     assert report.total_albums == 1
     assert len(report.incomplete_albums) == 0
     assert report.health_score == 100.0
+
+
+def test_doctor_controlled_anomalies(tmp_path):
+    library_dir = tmp_path / "Music"
+    from apolo.config import DoctorConfig
+
+    config = ApoloConfig(
+        directories=DirectoriesConfig(library_dir=library_dir),
+        doctor=DoctorConfig(controlled_anomalies=["Justice - Cross", "Bardero$ - PURE DRUG"]),
+    )
+    doctor = LibraryDoctor(config)
+
+    # 1. Controlled incomplete album (Justice - Cross has 1/2 tracks, but matches controlled rule)
+    alb_dir1 = library_dir / "Justice" / "Cross (2007)"
+    create_dummy_opus(alb_dir1 / "01 - Genesis.opus", title="Genesis", artist="Justice", album="Cross", track_number=1, track_total=2)
+
+    # 2. Uncontrolled incomplete album (Daft Punk - Discovery has 1/2 tracks)
+    alb_dir2 = library_dir / "Daft Punk" / "Discovery (2001)"
+    create_dummy_opus(alb_dir2 / "01 - One More Time.opus", title="One More Time", artist="Daft Punk", album="Discovery", track_number=1, track_total=2)
+
+    report = doctor.scan_library(library_dir=library_dir)
+    assert report.total_tracks == 2
+    assert report.total_albums == 2
+    assert len(report.incomplete_albums) == 1
+    assert report.incomplete_albums[0].album_title == "Discovery"
+
+    assert len(report.controlled_incomplete_albums) == 1
+    assert report.controlled_incomplete_albums[0].album_title == "Cross"
+
+    # Only 1 uncontrolled album penalizes health score (-10 pts)
+    assert report.health_score == 90.0
+
+
+def test_doctor_controlled_anomalies_tag(tmp_path):
+    library_dir = tmp_path / "Music"
+    config = ApoloConfig(directories=DirectoriesConfig(library_dir=library_dir))
+    doctor = LibraryDoctor(config)
+
+    # Create incomplete album with controlled_anomaly vorbis tag
+    alb_dir = library_dir / "C.R.O" / "Malos Cantores (2024)"
+    p = alb_dir / "01 - Hit.opus"
+    create_dummy_opus(p, title="Hit", artist="C.R.O", album="Malos Cantores", track_number=1, track_total=10)
+
+    # Tag with CONTROLLED_ANOMALY
+    from apolo.tagger import AudioTagger
+    AudioTagger.update_tags(p, {"controlled_anomaly": True})
+
+    report = doctor.scan_library(library_dir=library_dir)
+    assert len(report.incomplete_albums) == 0
+    assert len(report.controlled_incomplete_albums) == 1
+    assert report.controlled_incomplete_albums[0].album_title == "Malos Cantores"
+    assert report.health_score == 100.0
+
+
+def test_doctor_cli_control_command(tmp_path):
+    runner = CliRunner()
+
+    import os
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path)
+
+    # Add control rule
+    res1 = runner.invoke(app, ["doctor", "--control", "C.R.O - Malos Cantores"])
+    assert res1.exit_code == 0
+    assert "Added controlled anomaly rule" in res1.stdout
+
+    # Verify saved
+    loaded = load_config()
+    assert "C.R.O - Malos Cantores" in loaded.doctor.controlled_anomalies
+
+    # Remove rule
+    res2 = runner.invoke(app, ["doctor", "--uncontrol", "C.R.O - Malos Cantores"])
+    assert res2.exit_code == 0
+    assert "Removed controlled anomaly rule" in res2.stdout
+
+    loaded2 = load_config()
+    assert "C.R.O - Malos Cantores" not in loaded2.doctor.controlled_anomalies
+
+
+def test_doctor_show_controlled_anomalies_config(tmp_path):
+    # Test config loading
+    cfg_file = tmp_path / "apolo" / "config.toml"
+    cfg_file.parent.mkdir(parents=True, exist_ok=True)
+    cfg_file.write_text(
+        """
+[doctor]
+show_controlled_anomalies = false
+controlled_anomalies = ["Justice - Cross"]
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_config(cfg_file)
+    assert loaded.doctor.show_controlled_anomalies is False
+    assert loaded.doctor.controlled_anomalies == ["Justice - Cross"]
+
+    # Test saving controlled anomalies preserves show_controlled_anomalies
+    from apolo.config import save_doctor_controlled_anomalies
+    save_doctor_controlled_anomalies(["Justice - Cross", "Daft Punk - Discovery"], config_path=cfg_file)
+    
+    loaded_after = load_config(cfg_file)
+    assert loaded_after.doctor.show_controlled_anomalies is False
+    assert "Justice - Cross" in loaded_after.doctor.controlled_anomalies
+    assert "Daft Punk - Discovery" in loaded_after.doctor.controlled_anomalies
+
+
+def test_doctor_show_controlled_anomalies_cli(tmp_path):
+    runner = CliRunner()
+    import os
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path)
+
+    library_dir = tmp_path / "Music"
+    cfg_dir = tmp_path / "apolo"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_file = cfg_dir / "config.toml"
+
+    # Create dummy album with controlled anomaly
+    alb_dir = library_dir / "Justice" / "Cross (2007)"
+    create_dummy_opus(alb_dir / "01 - Genesis.opus", title="Genesis", artist="Justice", album="Cross", track_number=1, track_total=2)
+
+    # 1. Default config (show_controlled_anomalies = true): table should appear
+    cfg_file.write_text(
+        f"""
+[directories]
+library_dir = "{library_dir}"
+
+[doctor]
+show_controlled_anomalies = true
+controlled_anomalies = ["Justice - Cross"]
+""",
+        encoding="utf-8",
+    )
+
+    res1 = runner.invoke(app, ["doctor", "--dir", str(library_dir)])
+    assert res1.exit_code == 0
+    assert "Controlled Anomalies" in res1.stdout
+    assert "Cross" in res1.stdout
+
+    # 2. Config disabled (show_controlled_anomalies = false): detailed table should NOT appear, but summary still shows count
+    cfg_file.write_text(
+        f"""
+[directories]
+library_dir = "{library_dir}"
+
+[doctor]
+show_controlled_anomalies = false
+controlled_anomalies = ["Justice - Cross"]
+""",
+        encoding="utf-8",
+    )
+
+    res2 = runner.invoke(app, ["doctor", "--dir", str(library_dir)])
+    assert res2.exit_code == 0
+    assert "Álbumes Parciales Controlados" not in res2.stdout
+    assert "Controlled Anomalies:    1" in res2.stdout
+
+    # 3. Explicit --show-controlled overrides false config
+    res3 = runner.invoke(app, ["doctor", "--dir", str(library_dir), "--show-controlled"])
+    assert res3.exit_code == 0
+    assert "Álbumes Parciales Controlados" in res3.stdout
+    assert "Cross" in res3.stdout
+
+    # 4. Explicit --controlled displays controlled anomalies only
+    res4 = runner.invoke(app, ["doctor", "--dir", str(library_dir), "--controlled"])
+    assert res4.exit_code == 0
+    assert "Álbumes Parciales Controlados" in res4.stdout
+    assert "Cross" in res4.stdout
+
+
+def test_doctor_show_missing_lyrics_config(tmp_path):
+    cfg_file = tmp_path / "apolo" / "config.toml"
+    cfg_file.parent.mkdir(parents=True, exist_ok=True)
+    cfg_file.write_text(
+        """
+[doctor]
+show_missing_lyrics = false
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_config(cfg_file)
+    assert loaded.doctor.show_missing_lyrics is False
+
+
+def test_doctor_show_missing_lyrics_cli(tmp_path):
+    runner = CliRunner()
+    import os
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path)
+
+    library_dir = tmp_path / "Music"
+    cfg_dir = tmp_path / "apolo"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_file = cfg_dir / "config.toml"
+
+    # Create dummy album missing lyrics
+    alb_dir = library_dir / "Justice" / "Cross (2007)"
+    create_dummy_opus(alb_dir / "01 - Genesis.opus", title="Genesis", artist="Justice", album="Cross", track_number=1, track_total=1, lyrics="")
+
+    # 1. Default config (show_missing_lyrics = true): table should appear
+    cfg_file.write_text(
+        f"""
+[directories]
+library_dir = "{library_dir}"
+
+[doctor]
+show_missing_lyrics = true
+""",
+        encoding="utf-8",
+    )
+
+    res1 = runner.invoke(app, ["doctor", "--dir", str(library_dir)])
+    assert res1.exit_code == 0
+    assert "Tracks Missing Synced Lyrics" in res1.stdout
+
+    # 2. Config disabled (show_missing_lyrics = false): table should NOT appear, but summary still shows count
+    cfg_file.write_text(
+        f"""
+[directories]
+library_dir = "{library_dir}"
+
+[doctor]
+show_missing_lyrics = false
+""",
+        encoding="utf-8",
+    )
+
+    res2 = runner.invoke(app, ["doctor", "--dir", str(library_dir)])
+    assert res2.exit_code == 0
+    assert "Tracks Missing Synced Lyrics" not in res2.stdout
+    assert "Missing Synced Lyrics:   1" in res2.stdout
+
+    # 3. Explicit --show-lyrics overrides false config
+    res3 = runner.invoke(app, ["doctor", "--dir", str(library_dir), "--show-lyrics"])
+    assert res3.exit_code == 0
+    assert "Tracks Missing Synced Lyrics" in res3.stdout
+
+    # 4. Explicit --missing-lyrics displays missing lyrics table only
+    res4 = runner.invoke(app, ["doctor", "--dir", str(library_dir), "--missing-lyrics"])
+    assert res4.exit_code == 0
+    assert "Tracks Missing Synced Lyrics" in res4.stdout
+
+
+
 

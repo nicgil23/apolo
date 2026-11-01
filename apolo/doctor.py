@@ -2,18 +2,15 @@ import hashlib
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
-import mutagen
-from mutagen.oggopus import OggOpus
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 from PIL import Image
 
 from apolo.config import ApoloConfig, load_config
 from apolo.lyrics.lrclib import LRCLIBProvider
 from apolo.metadata.matcher import MetadataMatcher
-from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import AUDIO_EXTENSIONS, ProcessingPipeline
 from apolo.tagger import AudioTagger
-from apolo.utils import normalize_search_string
+from apolo.utils import is_single_release, normalize_search_string
 
 
 @dataclass
@@ -23,8 +20,6 @@ class DuplicateGroup:
     tracks: List[Path]
     match_type: str  # "hash" or "fuzzy_tag"
 
-
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 @dataclass
 class IncompleteAlbum:
@@ -42,6 +37,7 @@ class LibraryHealthReport:
     total_albums: int = 0
     duplicates: List[DuplicateGroup] = field(default_factory=list)
     incomplete_albums: List[IncompleteAlbum] = field(default_factory=list)
+    controlled_incomplete_albums: List[IncompleteAlbum] = field(default_factory=list)
     missing_lyrics: List[Path] = field(default_factory=list)
     missing_or_lowres_covers: List[Tuple[Path, str]] = field(default_factory=list)  # (path, reason)
     missing_essential_tags: List[Tuple[Path, List[str]]] = field(default_factory=list)  # (path, missing_fields)
@@ -56,6 +52,46 @@ class LibraryDoctor:
         self.pipeline = ProcessingPipeline(self.config)
         self.lyrics_provider = LRCLIBProvider(synced_only=self.config.providers.synced_lyrics_only)
         self.matcher = MetadataMatcher(self.config)
+
+    def is_controlled_anomaly(
+        self,
+        album_artist: str,
+        album_title: str,
+        folder: Optional[Path] = None,
+        has_controlled_tag: bool = False,
+    ) -> bool:
+        """Determines whether an incomplete album is an intentional / controlled anomaly."""
+        if has_controlled_tag:
+            return True
+
+        if not hasattr(self.config, "doctor") or not self.config.doctor.controlled_anomalies:
+            return False
+
+        norm_aa = album_artist.strip().lower()
+        norm_title = album_title.strip().lower()
+        combined = f"{album_artist} - {album_title}".strip().lower()
+        folder_name = folder.name.lower() if folder else ""
+        folder_str = str(folder).lower() if folder else ""
+
+        import fnmatch
+        for rule in self.config.doctor.controlled_anomalies:
+            clean_rule = rule.strip().lower()
+            if not clean_rule:
+                continue
+
+            # 1. Exact matches
+            if clean_rule in (combined, norm_title, norm_aa):
+                return True
+
+            # 2. Glob pattern matching
+            if fnmatch.fnmatch(combined, clean_rule) or fnmatch.fnmatch(norm_title, clean_rule):
+                return True
+
+            # 3. Substring matching
+            if clean_rule in combined or (folder_name and clean_rule in folder_name) or (folder_str and clean_rule in folder_str):
+                return True
+
+        return False
 
     def scan_library(
         self,
@@ -121,7 +157,8 @@ class LibraryDoctor:
             disc_num = info.get("disc_number") or 1
             disc_total = info.get("disc_total")
 
-            if norm_album and norm_aa and norm_album not in ["single", "singles", "unknown"]:
+            is_single = is_single_release(album, track_total) or "singles" in [p.lower() for p in file_path.parts]
+            if norm_album and norm_aa and norm_album not in ["single", "singles", "unknown"] and not is_single:
                 alb_key = (norm_aa, norm_album)
                 if alb_key not in albums_map:
                     albums_map[alb_key] = {
@@ -132,10 +169,13 @@ class LibraryDoctor:
                         "track_totals": set(),
                         "total_files": 0,
                         "folders": set(),
+                        "has_controlled_tag": False,
                     }
                 alb_entry = albums_map[alb_key]
                 alb_entry["total_files"] += 1
                 alb_entry["folders"].add(file_path.parent)
+                if info.get("controlled_anomaly"):
+                    alb_entry["has_controlled_tag"] = True
                 if disc_total is not None:
                     alb_entry["disc_totals"].add(disc_total)
                 if track_total is not None:
@@ -171,7 +211,7 @@ class LibraryDoctor:
                 missing_fields.append("date/year")
             if not genre:
                 missing_fields.append("genre")
-            if track_num is None and norm_album not in ["single", "singles"]:
+            if track_num is None and not is_single:
                 missing_fields.append("track_number")
             if missing_fields:
                 report.missing_essential_tags.append((file_path, missing_fields))
@@ -264,16 +304,18 @@ class LibraryDoctor:
                 if missing_items:
                     folder = next(iter(data["folders"])) if data["folders"] else target_dir
                     display_total = global_tt or total_expected_tracks
-                    report.incomplete_albums.append(
-                        IncompleteAlbum(
-                            album_artist=data["album_artist"],
-                            album_title=data["album_title"],
-                            track_total=display_total,
-                            present_tracks=present_items,
-                            missing_tracks=missing_items,
-                            folder=folder,
-                        )
+                    inc_album = IncompleteAlbum(
+                        album_artist=data["album_artist"],
+                        album_title=data["album_title"],
+                        track_total=display_total,
+                        present_tracks=present_items,
+                        missing_tracks=missing_items,
+                        folder=folder,
                     )
+                    if self.is_controlled_anomaly(data["album_artist"], data["album_title"], folder, data.get("has_controlled_tag", False)):
+                        report.controlled_incomplete_albums.append(inc_album)
+                    else:
+                        report.incomplete_albums.append(inc_album)
             else:
                 d_info = discs.get(1, {"present_tracks": set(), "track_totals": set()})
                 pres = sorted(list(d_info["present_tracks"]))
@@ -283,28 +325,49 @@ class LibraryDoctor:
                     missing = sorted(list(expected - set(pres)))
                     if missing:
                         folder = next(iter(data["folders"])) if data["folders"] else target_dir
-                        report.incomplete_albums.append(
-                            IncompleteAlbum(
-                                album_artist=data["album_artist"],
-                                album_title=data["album_title"],
-                                track_total=tt,
-                                present_tracks=pres,
-                                missing_tracks=missing,
-                                folder=folder,
-                            )
+                        inc_album = IncompleteAlbum(
+                            album_artist=data["album_artist"],
+                            album_title=data["album_title"],
+                            track_total=tt,
+                            present_tracks=pres,
+                            missing_tracks=missing,
+                            folder=folder,
                         )
+                        if self.is_controlled_anomaly(data["album_artist"], data["album_title"], folder, data.get("has_controlled_tag", False)):
+                            report.controlled_incomplete_albums.append(inc_album)
+                        else:
+                            report.incomplete_albums.append(inc_album)
 
-        # 7. Fragmented Collaborative Folders audit
+        # 7. Fragmented Folders audit (Collaborative and Accent/Case/Symbol duplicates)
         try:
-            from apolo.utils import parse_artists
+            from apolo.utils import normalize_dir_key, parse_artists
             root_dirs = [p for p in target_dir.iterdir() if p.is_dir() and "Playlists" not in p.parts and p.name.lower() != "various artists"]
             for folder in root_dirs:
                 m_artists, _, all_a, _ = parse_artists(folder.name)
                 if len(all_a) > 1 and m_artists:
-                    primary_name = m_artists[0]
-                    base_dir = self.pipeline.organizer._resolve_case_insensitive_dir(target_dir, primary_name)
-                    if base_dir.exists() and base_dir.resolve() != folder.resolve():
-                        report.fragmented_artist_folders.append((folder, base_dir, primary_name))
+                    matched_base = None
+                    matched_name = None
+                    for k in range(len(m_artists) - 1, 0, -1):
+                        cand_name = " & ".join(m_artists[:k])
+                        base_dir = self.pipeline.organizer._resolve_case_insensitive_dir(target_dir, cand_name)
+                        if base_dir.exists() and base_dir.resolve() != folder.resolve():
+                            matched_base = base_dir
+                            matched_name = base_dir.name
+                            break
+                    if matched_base and matched_name:
+                        if (folder, matched_base, matched_name) not in report.fragmented_artist_folders:
+                            report.fragmented_artist_folders.append((folder, matched_base, matched_name))
+
+            seen_artists: Dict[str, Path] = {}
+            for folder in root_dirs:
+                key = normalize_dir_key(folder.name)
+                if key in seen_artists:
+                    target_primary = seen_artists[key]
+                    if target_primary.resolve() != folder.resolve():
+                        if (folder, target_primary, target_primary.name) not in report.fragmented_artist_folders:
+                            report.fragmented_artist_folders.append((folder, target_primary, target_primary.name))
+                else:
+                    seen_artists[key] = folder
         except Exception:
             pass
 
@@ -403,7 +466,7 @@ class LibraryDoctor:
         tracks: List[Path],
         on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> int:
-        """Re-queries providers to fetch and embed high-resolution covers for tracks."""
+        """Re-queries providers and scans sibling album tracks to fetch and embed high-resolution covers."""
         repaired = 0
         for idx, file_path in enumerate(tracks, 1):
             if not file_path.exists():
@@ -411,20 +474,70 @@ class LibraryDoctor:
             info = self.pipeline.extract_file_info(file_path)
             title = info.get("title") or file_path.stem
             artist = info.get("artist") or "Unknown Artist"
+            album = info.get("album")
 
             if on_progress:
                 on_progress("cover", f"Searching cover for ({idx}/{len(tracks)}): {artist} - {title}")
 
-            query = f"{artist} {title}"
-            match = self.matcher.find_best_match(
-                query=query,
-                expected_title=title,
-                expected_artist=artist,
-                expected_album=info.get("album"),
-                expected_duration=info.get("duration"),
-            )
-            if match and match.cover_art_data:
-                AudioTagger.update_tags(file_path, {}, cover_data=match.cover_art_data)
+            best_cover_data: Optional[bytes] = None
+            best_pixel_count: int = 0
+
+            # 1. Check folder images and sibling tracks in the same directory
+            parent = file_path.parent
+            if parent.exists() and parent.is_dir():
+                for img_name in ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"]:
+                    img_p = parent / img_name
+                    if img_p.exists() and img_p.is_file():
+                        try:
+                            data = img_p.read_bytes()
+                            with Image.open(io.BytesIO(data)) as im:
+                                pixels = im.size[0] * im.size[1]
+                                if im.size[0] >= 500 and im.size[1] >= 500 and pixels > best_pixel_count:
+                                    best_pixel_count = pixels
+                                    best_cover_data = data
+                        except Exception:
+                            pass
+
+                for sibling in parent.iterdir():
+                    if sibling.is_file() and sibling != file_path and sibling.suffix.lower() in AUDIO_EXTENSIONS:
+                        sib_data = AudioTagger.extract_cover_art_from_file(sibling)
+                        if sib_data:
+                            try:
+                                with Image.open(io.BytesIO(sib_data)) as im:
+                                    pixels = im.size[0] * im.size[1]
+                                    if im.size[0] >= 500 and im.size[1] >= 500 and pixels > best_pixel_count:
+                                        best_pixel_count = pixels
+                                        best_cover_data = sib_data
+                            except Exception:
+                                pass
+
+            # 2. Query online providers if no sibling cover >= 1400x1400 was found
+            if best_pixel_count < (1400 * 1400):
+                queries = [f"{artist} {title}"]
+                if album and album.lower() not in ["single", "singles", "unknown"]:
+                    queries.append(f"{artist} {album}")
+
+                for query in queries:
+                    match = self.matcher.find_best_match(
+                        query=query,
+                        expected_title=title,
+                        expected_artist=artist,
+                        expected_album=album,
+                        expected_duration=info.get("duration"),
+                    )
+                    if match and match.cover_art_data:
+                        try:
+                            with Image.open(io.BytesIO(match.cover_art_data)) as im:
+                                pixels = im.size[0] * im.size[1]
+                                if pixels > best_pixel_count and im.size[0] >= 500 and im.size[1] >= 500:
+                                    best_pixel_count = pixels
+                                    best_cover_data = match.cover_art_data
+                                    break
+                        except Exception:
+                            pass
+
+            if best_cover_data:
+                AudioTagger.update_tags(file_path, {}, cover_data=best_cover_data)
                 repaired += 1
 
         return repaired
