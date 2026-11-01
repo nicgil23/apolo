@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from mutagen.flac import FLAC
 from mutagen.oggopus import OggOpus
@@ -10,7 +9,6 @@ from apolo.organizer import LibraryOrganizer
 from apolo.pipeline import ProcessingPipeline
 from apolo.tagger import AudioTagger
 from apolo.utils import (
-    extract_primary_artist,
     is_compilation_album,
     is_single_release,
     parse_artists,
@@ -123,12 +121,8 @@ def test_multi_disc_compilation_filename_when_no_folders(tmp_path: Path):
     assert dest1.name != dest2.name
 
 
-def test_album_consensus_different_artists_same_album_name(tmp_path: Path):
+def test_album_consensus_different_artists_same_album_name():
     # If Queen and Blink-182 both have "Greatest Hits" processed in the same folder, they must not cross-contaminate
-    pipeline = ProcessingPipeline(
-        ApoloConfig(directories=DirectoriesConfig(library_dir=tmp_path / "Music"))
-    )
-
     queen_tracks = [
         (Path(f"/tmp/q{i}.opus"), None, TrackMetadata(title=f"Song {i}", artist="Queen", album_artist="Queen", album="Greatest Hits"))
         for i in range(1, 8)
@@ -137,8 +131,6 @@ def test_album_consensus_different_artists_same_album_name(tmp_path: Path):
         (Path(f"/tmp/b{i}.opus"), None, TrackMetadata(title=f"Blink Song {i}", artist="Blink-182", album_artist="Blink-182", album="Greatest Hits"))
         for i in range(1, 4)
     ]
-
-    all_tracks = queen_tracks + blink_tracks
 
     from apolo.utils import infer_consensus_album_artist
     # Verify consensus on blink tracks alone returns Blink-182
@@ -296,4 +288,37 @@ def test_reorganize_paths_moves_companion_cover(tmp_path: Path):
     assert new_dest.exists()
     assert (new_dest.parent / "cover.jpg").exists()
     assert not old_folder.exists()
+
+
+def test_symbol_only_track_title_matching_and_organization(tmp_path: Path):
+    from apolo.utils import normalize_search_string
+    # Symbol-only titles must preserve non-empty representation in normalize_search_string
+    assert normalize_search_string("◠") == "◠"
+    assert normalize_search_string("★") == "★"
+    assert normalize_search_string("$$$") == "$$$"
+
+    # Matcher must not raise UnboundLocalError when computing similarity for symbol-only or empty strings
+    matcher = MetadataMatcher()
+    meta = TrackMetadata(title="◠", artist="Tanger", album="BONUSx2")
+    score = matcher._compute_similarity_score(
+        meta=meta,
+        clean_title="◠",
+        clean_artist="tanger",
+        primary_artist="tanger",
+        clean_album="bonusx2",
+        expected_duration=None,
+    )
+    assert score > 70.0
+
+    # Also test empty clean_title edge case
+    score_empty = matcher._compute_similarity_score(
+        meta=meta,
+        clean_title="",
+        clean_artist="tanger",
+        primary_artist="tanger",
+        clean_album="bonusx2",
+        expected_duration=None,
+    )
+    assert score_empty > 0.0
+
 

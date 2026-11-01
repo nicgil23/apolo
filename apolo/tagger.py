@@ -105,12 +105,24 @@ class AudioTagger:
             audio["FEATURED_ARTIST"] = [str(a) for a in metadata.featured_artists]
             audio["ARTIST_FEATURED"] = [str(a) for a in metadata.featured_artists]
 
-        if metadata.album:
-            audio["ALBUM"] = [metadata.album]
-        if metadata.track_number is not None:
-            audio["TRACKNUMBER"] = [str(metadata.track_number)]
-        if metadata.track_total is not None:
-            audio["TRACKTOTAL"] = [str(metadata.track_total)]
+        album_to_tag = metadata.album
+        if not album_to_tag or album_to_tag.strip().lower() in ["single", "singles", "unknown album"]:
+            album_to_tag = f"{metadata.title} - Single" if metadata.title else "Single"
+        if album_to_tag:
+            audio["ALBUM"] = [album_to_tag]
+
+        track_num = metadata.track_number
+        track_tot = metadata.track_total
+        from apolo.utils import is_single_release
+        if track_num is None and is_single_release(album_to_tag, track_tot):
+            track_num = 1
+            if track_tot is None:
+                track_tot = 1
+
+        if track_num is not None:
+            audio["TRACKNUMBER"] = [str(track_num)]
+        if track_tot is not None:
+            audio["TRACKTOTAL"] = [str(track_tot)]
         if metadata.date:
             audio["DATE"] = [str(metadata.date)]
         if metadata.genre:
@@ -201,12 +213,24 @@ class AudioTagger:
             audio["FEATURED_ARTIST"] = [str(a) for a in metadata.featured_artists]
             audio["ARTIST_FEATURED"] = [str(a) for a in metadata.featured_artists]
 
-        if metadata.album:
-            audio["ALBUM"] = [metadata.album]
-        if metadata.track_number is not None:
-            audio["TRACKNUMBER"] = [str(metadata.track_number)]
-        if metadata.track_total is not None:
-            audio["TRACKTOTAL"] = [str(metadata.track_total)]
+        album_to_tag = metadata.album
+        if not album_to_tag or album_to_tag.strip().lower() in ["single", "singles", "unknown album"]:
+            album_to_tag = f"{metadata.title} - Single" if metadata.title else "Single"
+        if album_to_tag:
+            audio["ALBUM"] = [album_to_tag]
+
+        track_num = metadata.track_number
+        track_tot = metadata.track_total
+        from apolo.utils import is_single_release
+        if track_num is None and is_single_release(album_to_tag, track_tot):
+            track_num = 1
+            if track_tot is None:
+                track_tot = 1
+
+        if track_num is not None:
+            audio["TRACKNUMBER"] = [str(track_num)]
+        if track_tot is not None:
+            audio["TRACKTOTAL"] = [str(track_tot)]
         if metadata.date:
             audio["DATE"] = [str(metadata.date)]
         if metadata.genre:
@@ -353,6 +377,12 @@ class AudioTagger:
             audio["ORIGIN"] = [str(updates["origin"])]
             audio["SOURCE"] = [str(updates["origin"])]
             audio["ORIGEN"] = [str(updates["origin"])]
+        if "controlled_anomaly" in updates and updates["controlled_anomaly"] is not None:
+            val = "1" if updates["controlled_anomaly"] in [True, 1, "1", "true", "yes"] else "0"
+            audio["CONTROLLED_ANOMALY"] = [val]
+        if "partial_album" in updates and updates["partial_album"] is not None:
+            val = "1" if updates["partial_album"] in [True, 1, "1", "true", "yes"] else "0"
+            audio["PARTIAL_ALBUM"] = [val]
 
         if cover_data:
             try:
@@ -374,6 +404,13 @@ class AudioTagger:
                     audio.clear_pictures()
                     audio.add_picture(pic)
                 else:
+                    if hasattr(audio, "tags") and audio.tags:
+                        for k in list(audio.tags.keys()):
+                            if k.lower() in ["metadata_block_picture", "apic:", "covr", "coverart"]:
+                                try:
+                                    del audio.tags[k]
+                                except Exception:
+                                    pass
                     picture_data = pic.write()
                     encoded_data = base64.b64encode(picture_data).decode("ascii")
                     audio["METADATA_BLOCK_PICTURE"] = [encoded_data]

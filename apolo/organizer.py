@@ -1,4 +1,3 @@
-import os
 import re
 import shutil
 from pathlib import Path
@@ -10,7 +9,9 @@ from apolo.utils import (
     extract_disc_info,
     is_compilation_album,
     is_single_release,
+    normalize_dir_key,
     sanitize_filename,
+    strip_accents,
 )
 
 
@@ -20,38 +21,98 @@ class LibraryOrganizer:
         self.library_dir = self.config.directories.library_dir
 
     def _resolve_case_insensitive_dir(self, parent_dir: Path, target_name: str) -> Path:
-        """Finds existing directory on disk matching target_name case-insensitively, or returns new path."""
+        """Finds existing directory on disk matching target_name (case, accent, and symbol insensitive), or returns new path."""
         if not parent_dir.exists():
             return parent_dir / target_name
         try:
-            for entry in parent_dir.iterdir():
-                if entry.is_dir() and entry.name.lower() == target_name.lower():
+            target_lower = target_name.lower()
+            target_no_accents = strip_accents(target_name).lower()
+            target_key = normalize_dir_key(target_name)
+
+            entries = [e for e in parent_dir.iterdir() if e.is_dir()]
+
+            # 1. Exact case-insensitive match (highest priority)
+            for entry in entries:
+                if entry.name.lower() == target_lower:
                     return entry
+
+            # 2. Accent-insensitive match (e.g. Rosalía vs Rosalia)
+            for entry in entries:
+                if strip_accents(entry.name).lower() == target_no_accents:
+                    return entry
+
+            # 3. Normalized key match (symbols and punctuation insensitive, e.g. C.R.O vs C.R.O. vs FRO! vs Fro)
+            if target_key:
+                for entry in entries:
+                    if normalize_dir_key(entry.name) == target_key:
+                        return entry
         except Exception:
             pass
         return parent_dir / target_name
 
     def _resolve_album_dir(self, parent_dir: Path, album_clean: str, date_str: str) -> Path:
-        """Finds existing album directory matching album_clean case-insensitively with or without year, or returns standard."""
+        """Finds existing album directory matching album_clean (case, accent, and symbol insensitive) with or without year, or returns standard."""
         if not parent_dir.exists():
             album_folder = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
             return parent_dir / album_folder
 
-        target_with_date = (f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean).lower()
-        target_without_date = album_clean.lower()
+        target_with_date = f"{album_clean} ({date_str})" if date_str and date_str != "Unknown Year" else album_clean
+        target_without_date = album_clean
+
+        target_wd_lower = target_with_date.lower()
+        target_wd_no_accents = strip_accents(target_with_date).lower()
+        target_wd_key = normalize_dir_key(target_with_date)
+
+        target_wod_lower = target_without_date.lower()
+        target_wod_no_accents = strip_accents(target_without_date).lower()
+        target_wod_key = normalize_dir_key(target_without_date)
 
         try:
-            for entry in parent_dir.iterdir():
-                if entry.is_dir() and entry.name.lower() == target_with_date:
+            entries = [e for e in parent_dir.iterdir() if e.is_dir()]
+
+            # 1. Match with date: exact case-insensitive
+            for entry in entries:
+                if entry.name.lower() == target_wd_lower:
                     return entry
+
+            # 2. Match with date: accent-insensitive (e.g. Cápsula (2023) vs Capsula (2023))
+            for entry in entries:
+                if strip_accents(entry.name).lower() == target_wd_no_accents:
+                    return entry
+
+            # 3. Match with date: symbol-insensitive
+            if target_wd_key:
+                for entry in entries:
+                    if normalize_dir_key(entry.name) == target_wd_key:
+                        return entry
+
+            # 4. If no date provided or date is unknown: match album name with or without any year suffix
             if not date_str or date_str == "Unknown Year":
-                for entry in parent_dir.iterdir():
-                    if entry.is_dir() and (entry.name.lower() == target_without_date or entry.name.lower().startswith(f"{target_without_date} (")):
+                for entry in entries:
+                    e_lower = entry.name.lower()
+                    if e_lower == target_wod_lower or e_lower.startswith(f"{target_wod_lower} ("):
                         return entry
+                for entry in entries:
+                    e_no_acc = strip_accents(entry.name).lower()
+                    if e_no_acc == target_wod_no_accents or e_no_acc.startswith(f"{target_wod_no_accents} ("):
+                        return entry
+                if target_wod_key:
+                    for entry in entries:
+                        e_key = normalize_dir_key(entry.name)
+                        if e_key == target_wod_key or e_key.startswith(f"{target_wod_key} "):
+                            return entry
             else:
-                for entry in parent_dir.iterdir():
-                    if entry.is_dir() and entry.name.lower() == target_without_date:
+                # 5. When date is given, also check if folder exists without date
+                for entry in entries:
+                    if entry.name.lower() == target_wod_lower:
                         return entry
+                for entry in entries:
+                    if strip_accents(entry.name).lower() == target_wod_no_accents:
+                        return entry
+                if target_wod_key:
+                    for entry in entries:
+                        if normalize_dir_key(entry.name) == target_wod_key:
+                            return entry
         except Exception:
             pass
 

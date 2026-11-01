@@ -1,12 +1,7 @@
-import pytest
 from pathlib import Path
 from mutagen.oggopus import OggOpus
-from mutagen.flac import FLAC
 
 from apolo.metadata.models import TrackMetadata
-from apolo.metadata.musicbrainz import MusicBrainzProvider
-from apolo.metadata.deezer import DeezerProvider
-from apolo.metadata.itunes import iTunesProvider
 from apolo.tagger import AudioTagger
 from apolo.organizer import LibraryOrganizer
 from apolo.config import ApoloConfig
@@ -176,26 +171,11 @@ def test_inspector_displays_all_artists(tmp_path: Path):
     assert "Bad Bunny" in output
 
 
-def test_infer_consensus_album_artist_70_percent():
+def test_infer_consensus_album_artist_50_percent():
     from apolo.utils import infer_consensus_album_artist
 
-    # 1. 8 tracks: 6 by AKRIILA (75% >= 70%) -> consensus is AKRIILA
-    tracks_75 = [
-        {"artist": "AKRIILA", "album": "epistolares"},
-        {"artist": "AKRIILA", "album": "epistolares"},
-        {"artist": "AKRIILA", "album": "epistolares"},
-        {"artist": "AKRIILA", "album": "epistolares"},
-        {"artist": "AKRIILA", "album": "epistolares"},
-        {"artist": "AKRIILA", "album": "epistolares"},
-        {"artist": "AKRIILA & Bb trickz", "album": "epistolares"},
-        {"artist": "AKRIILA & Gianluca", "album": "epistolares"},
-    ]
-    assert infer_consensus_album_artist(tracks_75, threshold=0.70) == "AKRIILA"
-
-    # 2. 10 tracks: 6 by AKRIILA (60% < 70%) -> consensus is None (safer threshold)
-    tracks_60 = [
-        {"artist": "AKRIILA", "album": "epistolares"},
-        {"artist": "AKRIILA", "album": "epistolares"},
+    # 1. 8 tracks: 4 by AKRIILA (50% >= 50%) -> consensus is AKRIILA
+    tracks_50 = [
         {"artist": "AKRIILA", "album": "epistolares"},
         {"artist": "AKRIILA", "album": "epistolares"},
         {"artist": "AKRIILA", "album": "epistolares"},
@@ -205,7 +185,24 @@ def test_infer_consensus_album_artist_70_percent():
         {"artist": "Broke Carrey", "album": "epistolares"},
         {"artist": "Kidd Voodoo", "album": "epistolares"},
     ]
-    assert infer_consensus_album_artist(tracks_60, threshold=0.70) is None
+    assert infer_consensus_album_artist(tracks_50) == "AKRIILA"
+    assert infer_consensus_album_artist(tracks_50, threshold=0.50) == "AKRIILA"
+
+    # 2. 10 tracks: 4 by AKRIILA (40% < 50%) -> consensus is None
+    tracks_40 = [
+        {"artist": "AKRIILA", "album": "epistolares"},
+        {"artist": "AKRIILA", "album": "epistolares"},
+        {"artist": "AKRIILA", "album": "epistolares"},
+        {"artist": "AKRIILA", "album": "epistolares"},
+        {"artist": "Bb trickz", "album": "epistolares"},
+        {"artist": "Gianluca", "album": "epistolares"},
+        {"artist": "Broke Carrey", "album": "epistolares"},
+        {"artist": "Kidd Voodoo", "album": "epistolares"},
+        {"artist": "Duki", "album": "epistolares"},
+        {"artist": "Neo Pistea", "album": "epistolares"},
+    ]
+    assert infer_consensus_album_artist(tracks_40) is None
+    assert infer_consensus_album_artist(tracks_40, threshold=0.50) is None
 
 
 def test_single_routing_uses_primary_artist(tmp_path: Path):

@@ -1,5 +1,3 @@
-import pytest
-from pathlib import Path
 
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
 from apolo.metadata.models import TrackMetadata
@@ -7,8 +5,6 @@ from apolo.organizer import LibraryOrganizer
 from apolo.pipeline import ProcessingPipeline
 from apolo.utils import (
     extract_disc_info,
-    is_compilation_album,
-    is_single_release,
     sanitize_filename,
 )
 
@@ -46,7 +42,7 @@ def test_multi_disc_organization(tmp_path):
 
     assert "Disc 01" in str(dest1)
     assert "Disc 02" in str(dest2)
-    assert dest1.name == "01 - In the Flesh.opus"
+    assert dest1.name == "01 - In the Flesh？.opus"
     assert dest2.name == "01 - Hey You.opus"
     assert dest1 != dest2
 
@@ -241,5 +237,81 @@ def test_matcher_prefers_album_over_single():
     )
 
     assert score_album > score_single + 30.0
+
+
+def test_strip_accents_and_normalize_dir_key():
+    from apolo.utils import normalize_dir_key, strip_accents
+
+    assert strip_accents("Cápsula") == "Capsula"
+    assert strip_accents("Rosalía") == "Rosalia"
+    assert strip_accents("Beyoncé") == "Beyonce"
+    assert normalize_dir_key("Capsula (2023)") == "capsula 2023"
+    assert normalize_dir_key("Cápsula (2023)") == "capsula 2023"
+    assert normalize_dir_key("C.R.O.") == "cro"
+    assert normalize_dir_key("C.R.O") == "cro"
+    assert normalize_dir_key("FRO!") == "fro"
+
+
+def test_accent_insensitive_album_resolution(tmp_path):
+    config = ApoloConfig(
+        directories=DirectoriesConfig(library_dir=tmp_path / "Music"),
+    )
+    organizer = LibraryOrganizer(config)
+
+    cro_dir = tmp_path / "Music" / "C.R.O"
+    capsula_dir = cro_dir / "Cápsula (2023)"
+    capsula_dir.mkdir(parents=True)
+
+    # Track metadata has "Capsula" without accent
+    meta = TrackMetadata(
+        title="Sin Preguntar",
+        artist="C.R.O",
+        album_artist="C.R.O",
+        album="Capsula",
+        date="2023-10-11",
+        track_number=1,
+    )
+
+    dest = organizer.get_destination_path(meta)
+    assert dest.parent == capsula_dir
+    assert dest.name == "01 - Sin Preguntar.opus"
+
+
+def test_accent_and_symbol_insensitive_artist_resolution(tmp_path):
+    config = ApoloConfig(
+        directories=DirectoriesConfig(library_dir=tmp_path / "Music"),
+    )
+    organizer = LibraryOrganizer(config)
+
+    # 1. Existing artist folder with accent: Rosalía
+    rosalia_dir = tmp_path / "Music" / "Rosalía"
+    rosalia_dir.mkdir(parents=True)
+
+    meta_rosalia = TrackMetadata(
+        title="DESPECHÁ",
+        artist="Rosalia",  # Without accent
+        album_artist="Rosalia",
+        album="MOTOMAMI",
+        date="2022-03-18",
+        track_number=1,
+    )
+    dest_rosalia = organizer.get_destination_path(meta_rosalia)
+    assert dest_rosalia.parent.parent == rosalia_dir
+
+    # 2. Existing artist folder with dots: C.R.O
+    cro_dir = tmp_path / "Music" / "C.R.O"
+    cro_dir.mkdir(parents=True)
+
+    meta_cro = TrackMetadata(
+        title="Hustlers",
+        artist="C.R.O.",  # With trailing dot
+        album_artist="C.R.O.",
+        album="Malos Cantores",
+        date="2024-11-06",
+        track_number=2,
+    )
+    dest_cro = organizer.get_destination_path(meta_cro)
+    assert dest_cro.parent.parent == cro_dir
+
 
 
