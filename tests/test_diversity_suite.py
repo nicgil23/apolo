@@ -5,10 +5,10 @@ from typing import Optional
 from PIL import Image
 
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
-from apolo.doctor import LibraryDoctor
+from apolo.library.doctor import LibraryDoctor
 from apolo.metadata.models import TrackMetadata
-from apolo.organizer import LibraryOrganizer
-from apolo.tagger import AudioTagger
+from apolo.library.organizer import LibraryOrganizer
+from apolo.tagging.tagger import AudioTagger
 from apolo.utils import is_compilation_album
 
 

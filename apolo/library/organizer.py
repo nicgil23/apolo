@@ -4,15 +4,10 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from apolo.config import ApoloConfig, load_config
+from apolo.metadata.heuristics import is_compilation_album, is_single_release
 from apolo.metadata.models import TrackMetadata
-from apolo.utils import (
-    extract_disc_info,
-    is_compilation_album,
-    is_single_release,
-    normalize_dir_key,
-    sanitize_filename,
-    strip_accents,
-)
+from apolo.metadata.parsing import extract_disc_info
+from apolo.storage.sanitize import normalize_dir_key, sanitize_filename, strip_accents
 
 
 class LibraryOrganizer:

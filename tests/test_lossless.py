@@ -5,7 +5,7 @@ from mutagen.flac import FLAC
 from apolo.config import ApoloConfig, DirectoriesConfig, DownloaderConfig
 from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import ProcessingPipeline
-from apolo.tagger import AudioTagger
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_flac(path: Path):

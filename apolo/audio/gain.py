@@ -7,7 +7,7 @@ from typing import Callable, List, Optional, Tuple
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, load_config
-from apolo.pipeline import AUDIO_EXTENSIONS
+from apolo.constants import AUDIO_EXTENSIONS
 
 
 @dataclass

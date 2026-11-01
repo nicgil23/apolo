@@ -7,9 +7,9 @@ from typer.testing import CliRunner
 
 from apolo.cli import app
 from apolo.config import ApoloConfig, DirectoriesConfig, load_config
-from apolo.doctor import LibraryDoctor
+from apolo.library.doctor import LibraryDoctor
 from apolo.metadata.models import TrackMetadata
-from apolo.tagger import AudioTagger
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus(
@@ -200,7 +200,7 @@ def test_doctor_controlled_anomalies_tag(tmp_path):
     create_dummy_opus(p, title="Hit", artist="C.R.O", album="Malos Cantores", track_number=1, track_total=10)
 
     # Tag with CONTROLLED_ANOMALY
-    from apolo.tagger import AudioTagger
+    from apolo.tagging.tagger import AudioTagger
     AudioTagger.update_tags(p, {"controlled_anomaly": True})
 
     report = doctor.scan_library(library_dir=library_dir)

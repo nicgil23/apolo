@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from apolo.cli import app
 from apolo.metadata.models import TrackMetadata
-from apolo.tagger import AudioTagger
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus(output_path: Path, title: str = "Original Title", artist: str = "Original Artist"):

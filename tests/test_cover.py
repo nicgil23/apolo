@@ -6,9 +6,9 @@ from mutagen.oggopus import OggOpus
 from typer.testing import CliRunner
 
 from apolo.cli import app
-from apolo.cover import CoverManager
+from apolo.tagging.cover import CoverManager
 from apolo.metadata.models import TrackMetadata
-from apolo.tagger import AudioTagger
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus_with_cover(output_path: Path):

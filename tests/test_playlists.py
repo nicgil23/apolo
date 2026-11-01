@@ -5,8 +5,8 @@ from typer.testing import CliRunner
 from apolo.cli import app
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.metadata.models import TrackMetadata
-from apolo.playlists import PlaylistManager
-from apolo.tagger import AudioTagger
+from apolo.library.playlists import PlaylistManager
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus(

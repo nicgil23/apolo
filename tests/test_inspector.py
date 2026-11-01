@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 from rich.console import Console
 
-from apolo.inspector import inspect_track
+from apolo.tagging.inspector import inspect_track
 
 
 def create_dummy_audio(path: Path, codec: str = "libopus", ext: str = ".opus"):

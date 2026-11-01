@@ -4,7 +4,7 @@ from apolo.lyrics.lrclib import LRCLIBProvider
 from apolo.metadata.itunes import iTunesProvider
 from apolo.metadata.deezer import DeezerProvider
 from apolo.metadata.models import TrackMetadata
-from apolo.organizer import LibraryOrganizer
+from apolo.library.organizer import LibraryOrganizer
 from apolo.utils import clean_track_title, sanitize_filename
 
 

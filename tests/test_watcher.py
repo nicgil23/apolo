@@ -6,8 +6,8 @@ from typer.testing import CliRunner
 from apolo.cli import app
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.metadata.models import TrackMetadata
-from apolo.tagger import AudioTagger
-from apolo.watcher import InboxWatcher
+from apolo.tagging.tagger import AudioTagger
+from apolo.services.watcher import InboxWatcher
 
 
 def create_dummy_opus(output_path: Path):

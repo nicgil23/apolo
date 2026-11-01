@@ -5,9 +5,9 @@ from mutagen.oggopus import OggOpus
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
 from apolo.metadata.models import TrackMetadata
 from apolo.metadata.matcher import MetadataMatcher
-from apolo.organizer import LibraryOrganizer
+from apolo.library.organizer import LibraryOrganizer
 from apolo.pipeline import ProcessingPipeline
-from apolo.tagger import AudioTagger
+from apolo.tagging.tagger import AudioTagger
 from apolo.utils import (
     is_compilation_album,
     is_single_release,

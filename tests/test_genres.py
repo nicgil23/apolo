@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, DirectoriesConfig
-from apolo.doctor import LibraryDoctor
+from apolo.library.doctor import LibraryDoctor
 from apolo.metadata.genres import (
     clean_genre,
     infer_genre_from_artist,

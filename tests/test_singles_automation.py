@@ -3,10 +3,10 @@ from pathlib import Path
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, DirectoriesConfig
-from apolo.doctor import LibraryDoctor
+from apolo.library.doctor import LibraryDoctor
 from apolo.metadata.models import TrackMetadata
-from apolo.organizer import LibraryOrganizer
-from apolo.tagger import AudioTagger
+from apolo.library.organizer import LibraryOrganizer
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus(output_path: Path, title="Song", artist="Artist", album="Album", date="2024"):

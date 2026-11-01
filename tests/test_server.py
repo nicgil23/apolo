@@ -5,7 +5,7 @@ from unittest.mock import patch
 import requests
 
 from apolo.metadata.models import TrackMetadata
-from apolo.server import ApoloServer, ApoloTaskManager
+from apolo.services.server import ApoloServer, ApoloTaskManager
 from apolo.utils import clean_media_url
 
 

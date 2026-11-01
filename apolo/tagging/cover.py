@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import List, Tuple
 from PIL import Image
 
-from apolo.pipeline import AUDIO_EXTENSIONS
-from apolo.tagger import AudioTagger
+from apolo.constants import AUDIO_EXTENSIONS
+from apolo.tagging.tagger import AudioTagger
 
 
 class CoverManager:

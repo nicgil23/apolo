@@ -38,3 +38,7 @@ apolo = "apolo.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["apolo*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

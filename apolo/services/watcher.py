@@ -5,7 +5,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from rich.console import Console
 
 from apolo.config import ApoloConfig, load_config
-from apolo.pipeline import AUDIO_EXTENSIONS, ProcessingPipeline
+from apolo.constants import AUDIO_EXTENSIONS
+from apolo.pipeline import ProcessingPipeline
 
 
 class InboxWatcher:

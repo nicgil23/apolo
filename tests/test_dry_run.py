@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 from apolo.cli import app
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.pipeline import ProcessingPipeline
-from apolo.tagger import AudioTagger
+from apolo.tagging.tagger import AudioTagger
 from apolo.metadata.models import TrackMetadata
 
 

@@ -6,11 +6,12 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 from PIL import Image
 
 from apolo.config import ApoloConfig, load_config
+from apolo.constants import AUDIO_EXTENSIONS
 from apolo.lyrics.lrclib import LRCLIBProvider
+from apolo.metadata.heuristics import is_single_release
 from apolo.metadata.matcher import MetadataMatcher
-from apolo.pipeline import AUDIO_EXTENSIONS, ProcessingPipeline
-from apolo.tagger import AudioTagger
-from apolo.utils import is_single_release, normalize_search_string
+from apolo.tagging.tagger import AudioTagger
+from apolo.utils import normalize_search_string
 
 
 @dataclass
@@ -49,6 +50,8 @@ class LibraryHealthReport:
 class LibraryDoctor:
     def __init__(self, config: Optional[ApoloConfig] = None):
         self.config = config or load_config()
+        from apolo.pipeline import ProcessingPipeline
+
         self.pipeline = ProcessingPipeline(self.config)
         self.lyrics_provider = LRCLIBProvider(synced_only=self.config.providers.synced_lyrics_only)
         self.matcher = MetadataMatcher(self.config)

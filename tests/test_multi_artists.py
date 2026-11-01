@@ -2,8 +2,8 @@ from pathlib import Path
 from mutagen.oggopus import OggOpus
 
 from apolo.metadata.models import TrackMetadata
-from apolo.tagger import AudioTagger
-from apolo.organizer import LibraryOrganizer
+from apolo.tagging.tagger import AudioTagger
+from apolo.library.organizer import LibraryOrganizer
 from apolo.config import ApoloConfig
 from apolo.utils import parse_artists, extract_primary_artist
 
@@ -129,7 +129,7 @@ def test_organizer_uses_primary_artist(tmp_path: Path):
 
 
 def test_inspector_displays_all_artists(tmp_path: Path):
-    from apolo.inspector import inspect_track
+    from apolo.tagging.inspector import inspect_track
     from rich.console import Console
     import subprocess
 
@@ -224,7 +224,7 @@ def test_single_routing_uses_primary_artist(tmp_path: Path):
 
 
 def test_doctor_detects_and_repairs_fragmented_folders(tmp_path: Path):
-    from apolo.doctor import LibraryDoctor
+    from apolo.library.doctor import LibraryDoctor
     import subprocess
 
     lib_dir = tmp_path / "Library"

@@ -1,7 +1,7 @@
 
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
 from apolo.metadata.models import TrackMetadata
-from apolo.organizer import LibraryOrganizer
+from apolo.library.organizer import LibraryOrganizer
 from apolo.pipeline import ProcessingPipeline
 from apolo.utils import (
     extract_disc_info,

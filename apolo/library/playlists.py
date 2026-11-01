@@ -6,8 +6,9 @@ from typing import Dict, List, Optional, Tuple
 import mutagen
 
 from apolo.config import ApoloConfig, load_config
-from apolo.pipeline import AUDIO_EXTENSIONS, ProcessingPipeline
-from apolo.utils import format_duration, sanitize_filename
+from apolo.constants import AUDIO_EXTENSIONS
+from apolo.storage.sanitize import sanitize_filename
+from apolo.utils import format_duration
 
 
 @dataclass
@@ -38,6 +39,8 @@ class PlaylistManager:
         self.config = config or load_config()
         self.library_dir = self.config.directories.library_dir
         self.playlists_dir = self.library_dir / "Playlists"
+        from apolo.pipeline import ProcessingPipeline
+
         self.pipeline = ProcessingPipeline(self.config)
 
     def ensure_playlists_dir(self) -> Path:

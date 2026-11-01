@@ -7,7 +7,7 @@ from mutagen.oggopus import OggOpus
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import ProcessingPipeline
-from apolo.tagger import AudioTagger
+from apolo.tagging.tagger import AudioTagger
 
 
 def create_dummy_opus(output_path: Path):

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from apolo.fingerprint import AcousticFingerprinter
+from apolo.audio.fingerprint import AcousticFingerprinter
 from apolo.metadata.models import TrackMetadata
 
 
