@@ -23,12 +23,17 @@ def register(app: typer.Typer) -> None:
             "-a",
             help="Apply identified metadata, fetch synced lyrics, tag and organize into library.",
         ),
-        keep_lossless: bool = typer.Option(
-            False,
-            "--keep-lossless",
-            "--lossless",
+        keep_lossless: bool | None = typer.Option(
+            None,
+            "--keep-lossless/--no-keep-lossless",
+            "--lossless/--no-lossless",
             "-k",
-            help="Preserve lossless FLAC files directly without converting to Opus.",
+            help="Preserve lossless FLAC files directly without converting to Opus (overrides config).",
+        ),
+        to_opus: bool = typer.Option(
+            False,
+            "--to-opus",
+            help="Force transcoding FLAC audio to Opus (shortcut for --no-keep-lossless).",
         ),
         dry_run: bool = typer.Option(
             False,
@@ -39,6 +44,13 @@ def register(app: typer.Typer) -> None:
     ):
         """[bold green]Acoustic Fingerprinter[/bold green]: Identify untagged audio files using Chromaprint waveform fingerprinting and AcoustID."""
         config = load_config()
+        if to_opus or keep_lossless is False:
+            effective_lossless = False
+        elif keep_lossless is True:
+            effective_lossless = True
+        else:
+            effective_lossless = config.downloader.preserve_lossless
+
         fingerprinter = AcousticFingerprinter(config)
         pipeline = ProcessingPipeline(config)
 
@@ -121,9 +133,7 @@ def register(app: typer.Typer) -> None:
                 match.synced_lyrics = lyrics
                 match.origin = config.downloader.default_origin
 
-                should_preserve_flac = f.suffix.lower() == ".flac" and (
-                    keep_lossless or config.downloader.preserve_lossless
-                )
+                should_preserve_flac = f.suffix.lower() == ".flac" and effective_lossless
                 ext = ".flac" if should_preserve_flac else ".opus"
 
                 if dry_run:

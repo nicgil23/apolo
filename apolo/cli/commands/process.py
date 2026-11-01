@@ -33,12 +33,17 @@ def register(app: typer.Typer) -> None:
             "-i",
             help="Interactively review and select candidate metadata from online providers.",
         ),
-        keep_lossless: bool = typer.Option(
-            False,
-            "--keep-lossless",
-            "--lossless",
+        keep_lossless: bool | None = typer.Option(
+            None,
+            "--keep-lossless/--no-keep-lossless",
+            "--lossless/--no-lossless",
             "-k",
-            help="Preserve lossless FLAC files directly without converting to Opus.",
+            help="Preserve lossless FLAC files directly without converting to Opus (overrides config).",
+        ),
+        to_opus: bool = typer.Option(
+            False,
+            "--to-opus",
+            help="Force transcoding FLAC audio to Opus (shortcut for --no-keep-lossless).",
         ),
         dry_run: bool = typer.Option(
             False,
@@ -49,6 +54,13 @@ def register(app: typer.Typer) -> None:
     ):
         """[bold green]Process and Tag[/bold green] existing audio or video files into high-quality [bold].opus[/bold] (or FLAC if lossless), preserve valid metadata, tag origin, and organize into library."""
         config = load_config()
+        if to_opus or keep_lossless is False:
+            effective_lossless = False
+        elif keep_lossless is True:
+            effective_lossless = True
+        else:
+            effective_lossless = config.downloader.preserve_lossless
+
         pipeline = ProcessingPipeline(config)
         selector = make_cli_candidate_selector(pipeline.matcher, console) if interactive else None
 
@@ -77,7 +89,7 @@ def register(app: typer.Typer) -> None:
                         origin=origin,
                         force_rematch=force_rematch,
                         dry_run=dry_run,
-                        preserve_lossless=keep_lossless,
+                        preserve_lossless=effective_lossless,
                         candidate_selector=selector,
                         on_progress=update_status,
                     )
@@ -106,7 +118,7 @@ def register(app: typer.Typer) -> None:
                         origin=origin,
                         force_rematch=force_rematch,
                         dry_run=dry_run,
-                        preserve_lossless=keep_lossless,
+                        preserve_lossless=effective_lossless,
                         candidate_selector=selector,
                         on_progress=update_status,
                     )
@@ -138,12 +150,17 @@ def register(app: typer.Typer) -> None:
             "-i",
             help="Interactively review and select candidate metadata from online providers.",
         ),
-        keep_lossless: bool = typer.Option(
-            False,
-            "--keep-lossless",
-            "--lossless",
+        keep_lossless: bool | None = typer.Option(
+            None,
+            "--keep-lossless/--no-keep-lossless",
+            "--lossless/--no-lossless",
             "-k",
-            help="Preserve lossless FLAC files directly without converting to Opus.",
+            help="Preserve lossless FLAC files directly without converting to Opus (overrides config).",
+        ),
+        to_opus: bool = typer.Option(
+            False,
+            "--to-opus",
+            help="Force transcoding FLAC audio to Opus (shortcut for --no-keep-lossless).",
         ),
         dry_run: bool = typer.Option(
             False,
@@ -154,6 +171,13 @@ def register(app: typer.Typer) -> None:
     ):
         """[bold green]Inbox Processor[/bold green]: Process and organize all audio/video files dropped into your configured Inbox directory."""
         config = load_config()
+        if to_opus or keep_lossless is False:
+            effective_lossless = False
+        elif keep_lossless is True:
+            effective_lossless = True
+        else:
+            effective_lossless = config.downloader.preserve_lossless
+
         inbox_dir = config.directories.inbox_dir
         if not inbox_dir.exists():
             if not dry_run:
@@ -186,7 +210,7 @@ def register(app: typer.Typer) -> None:
                 origin=origin,
                 force_rematch=force_rematch,
                 dry_run=dry_run,
-                preserve_lossless=keep_lossless,
+                preserve_lossless=effective_lossless,
                 candidate_selector=selector,
                 on_progress=update_status,
             )

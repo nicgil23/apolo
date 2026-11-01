@@ -179,3 +179,81 @@ def test_reorganize_paths_preserves_flac_extension(tmp_path: Path):
     assert new_p.suffix == ".flac"
     assert new_p.exists()
     assert "Beethoven/Classics (1808)/01 - Symphony 5.flac" in str(new_p)
+
+
+def test_process_flac_reads_config_preserve_lossless_by_default(tmp_path: Path, monkeypatch):
+    library_dir = tmp_path / "music"
+    inbox_dir = tmp_path / "inbox"
+    temp_dir = tmp_path / "temp"
+    for d in [library_dir, inbox_dir, temp_dir]:
+        d.mkdir(parents=True)
+
+    config = ApoloConfig(
+        directories=DirectoriesConfig(
+            library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir
+        ),
+        downloader=DownloaderConfig(preserve_lossless=True),
+    )
+
+    flac_file = inbox_dir / "flac_track_default.flac"
+    create_dummy_flac(flac_file)
+
+    pipeline = ProcessingPipeline(config)
+    monkeypatch.setattr(
+        pipeline.matcher,
+        "find_best_match",
+        lambda *args, **kwargs: TrackMetadata(
+            title="Lossless Config Title",
+            artist="Lossless Config Artist",
+            album="Lossless Config Album",
+            date="2024",
+        ),
+    )
+    monkeypatch.setattr(pipeline.lyrics_provider, "get_synced_lyrics", lambda *args, **kwargs: None)
+
+    # preserve_lossless=None should fallback to config.downloader.preserve_lossless (True)
+    res = pipeline.process_file(flac_file, preserve_lossless=None)
+    assert res is not None
+    dest_audio, _, meta = res
+
+    assert dest_audio.suffix == ".flac"
+    assert dest_audio.exists()
+
+
+def test_process_flac_override_to_opus_when_config_is_true(tmp_path: Path, monkeypatch):
+    library_dir = tmp_path / "music"
+    inbox_dir = tmp_path / "inbox"
+    temp_dir = tmp_path / "temp"
+    for d in [library_dir, inbox_dir, temp_dir]:
+        d.mkdir(parents=True)
+
+    config = ApoloConfig(
+        directories=DirectoriesConfig(
+            library_dir=library_dir, inbox_dir=inbox_dir, temp_dir=temp_dir
+        ),
+        downloader=DownloaderConfig(preserve_lossless=True),
+    )
+
+    flac_file = inbox_dir / "flac_track_transcode.flac"
+    create_dummy_flac(flac_file)
+
+    pipeline = ProcessingPipeline(config)
+    monkeypatch.setattr(
+        pipeline.matcher,
+        "find_best_match",
+        lambda *args, **kwargs: TrackMetadata(
+            title="Forced Opus Song",
+            artist="Artist Z",
+            album="Album Z",
+            date="2024",
+        ),
+    )
+    monkeypatch.setattr(pipeline.lyrics_provider, "get_synced_lyrics", lambda *args, **kwargs: None)
+
+    # preserve_lossless=False overrides config.downloader.preserve_lossless=True
+    res = pipeline.process_file(flac_file, preserve_lossless=False)
+    assert res is not None
+    dest_audio, _, meta = res
+
+    assert dest_audio.suffix == ".opus"
+    assert dest_audio.exists()
