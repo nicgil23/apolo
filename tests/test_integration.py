@@ -1,14 +1,11 @@
-import os
 import subprocess
-import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from PIL import Image
-import pytest
 from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, DirectoriesConfig
-from apolo.metadata.models import METADATOS_BIBLIOTECA, TrackMetadata
-from apolo.organizer import LibraryOrganizer
+from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import ProcessingPipeline
 from apolo.tagger import AudioTagger
 
@@ -90,7 +87,16 @@ def test_process_file_pipeline(tmp_path):
     input_opus = tmp_path / "Daft Punk - Get Lucky.opus"
     create_dummy_opus(input_opus)
 
-    res = pipeline.process_file(input_opus)
+    fake_match = TrackMetadata(
+        title="Get Lucky",
+        artist="Daft Punk",
+        album="Random Access Memories",
+        track_number=8,
+        date="2013-05-17",
+        genre="Disco",
+    )
+    with patch.object(pipeline.matcher, "find_best_match", return_value=fake_match):
+        res = pipeline.process_file(input_opus)
     assert res is not None
     dest_audio, dest_lrc, meta = res
 
@@ -121,7 +127,15 @@ def test_inbox_preserves_sidecar_lrc(tmp_path):
     sidecar_lrc = album_dir / "10. Duki - Barro.lrc"
     sidecar_lrc.write_text(custom_lrc_content, encoding="utf-8")
 
-    results = pipeline.process_directory(inbox_dir)
+    fake_match = TrackMetadata(
+        title="Barro",
+        artist="Duki",
+        album="Ameri",
+        track_number=10,
+        date="2024",
+    )
+    with patch.object(pipeline.matcher, "find_best_match", return_value=fake_match):
+        results = pipeline.process_directory(inbox_dir)
     assert len(results) == 1
     dest_audio, dest_lrc, meta = results[0]
 
@@ -156,7 +170,18 @@ def test_inbox_embeds_and_cleans_folder_images(tmp_path):
     cover_file = album_dir / "cover.jpg"
     cover_file.write_bytes(create_dummy_cover_bytes())
 
-    results = pipeline.process_directory(inbox_dir)
+    def fake_matcher(query, **kwargs):
+        title = kwargs.get("expected_title") or "Track"
+        return TrackMetadata(
+            title=title,
+            artist="Duki",
+            album="Ameri",
+            track_number=1 if "Track1" in title else 2,
+            date="2024",
+        )
+
+    with patch.object(pipeline.matcher, "find_best_match", side_effect=fake_matcher):
+        results = pipeline.process_directory(inbox_dir)
     assert len(results) == 2
 
     for dest_audio, dest_lrc, meta in results:

@@ -1,12 +1,9 @@
 import subprocess
 from pathlib import Path
-import mutagen
-from mutagen.flac import FLAC, Picture
-import pytest
+from mutagen.flac import FLAC
 
 from apolo.config import ApoloConfig, DirectoriesConfig, DownloaderConfig
 from apolo.metadata.models import TrackMetadata
-from apolo.organizer import LibraryOrganizer
 from apolo.pipeline import ProcessingPipeline
 from apolo.tagger import AudioTagger
 

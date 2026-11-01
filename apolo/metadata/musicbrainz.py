@@ -1,11 +1,11 @@
-from typing import List, Optional
+from typing import List
 import musicbrainzngs
 
 from apolo.metadata.models import TrackMetadata
 
 
 class MusicBrainzProvider:
-    def __init__(self, user_agent: str = "Apolo", version: str = "0.1.0", contact: str = "https://github.com/apolo"):
+    def __init__(self, user_agent: str = "Apolo", version: str = "1.0.0", contact: str = "https://github.com/apolo"):
         musicbrainzngs.set_useragent(user_agent, version, contact)
 
     def search(self, query: str, limit: int = 5) -> List[TrackMetadata]:

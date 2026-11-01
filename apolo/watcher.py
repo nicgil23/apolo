@@ -1,8 +1,7 @@
-import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from rich.console import Console
 
 from apolo.config import ApoloConfig, load_config
@@ -31,7 +30,7 @@ class InboxWatcher:
         watch_dir: Path,
         file_size_cache: Dict[Path, int],
         on_event: Optional[Callable[[str, str], None]] = None,
-    ) -> List[Tuple[Path, Optional[Path], any]]:
+    ) -> List[Tuple[Path, Optional[Path], Any]]:
         """
         Scans watch_dir, checks file size stability across polls to debounce active writes,
         and processes stabilized audio files.

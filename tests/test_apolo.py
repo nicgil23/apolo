@@ -1,22 +1,16 @@
-import os
-import tempfile
-from pathlib import Path
-import pytest
-from mutagen.oggopus import OggOpus
 
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.lyrics.lrclib import LRCLIBProvider
 from apolo.metadata.itunes import iTunesProvider
 from apolo.metadata.deezer import DeezerProvider
-from apolo.metadata.matcher import MetadataMatcher
-from apolo.metadata.models import METADATOS_BIBLIOTECA, TrackMetadata
+from apolo.metadata.models import TrackMetadata
 from apolo.organizer import LibraryOrganizer
-from apolo.tagger import AudioTagger
 from apolo.utils import clean_track_title, sanitize_filename
 
 
 def test_sanitize_filename():
-    assert sanitize_filename("Artist/Track:Name?*") == "Artist_Track_Name"
+    assert sanitize_filename("Artist/Track:Name?*") == "Artist／Track：Name？＊"
+    assert sanitize_filename("Artist/Track:Name?*", replace_char="_") == "Artist_Track_Name"
     assert sanitize_filename("  clean  name  ") == "clean name"
     assert sanitize_filename("") == "Unknown"
 
@@ -31,7 +25,41 @@ def test_clean_track_title():
     assert artist2 == "Queen"
 
 
-def test_metadata_providers_search():
+def test_metadata_providers_search(monkeypatch):
+    class FakeResponse:
+        def __init__(self, data):
+            self._data = data
+            self.status_code = 200
+
+        def json(self):
+            return self._data
+
+    def fake_get(url, *args, **kwargs):
+        if "itunes.apple.com" in url:
+            return FakeResponse({
+                "results": [
+                    {
+                        "trackName": "Get Lucky",
+                        "artistName": "Daft Punk",
+                        "collectionName": "Random Access Memories",
+                        "releaseDate": "2013-05-17T07:00:00Z",
+                    }
+                ]
+            })
+        elif "api.deezer.com" in url:
+            return FakeResponse({
+                "data": [
+                    {
+                        "title": "Get Lucky",
+                        "artist": {"name": "Daft Punk"},
+                        "album": {"title": "Random Access Memories"},
+                    }
+                ]
+            })
+        return FakeResponse({})
+
+    monkeypatch.setattr("requests.get", fake_get)
+
     itunes = iTunesProvider()
     results_itunes = itunes.search("Daft Punk Get Lucky", limit=2)
     assert len(results_itunes) > 0
@@ -43,7 +71,17 @@ def test_metadata_providers_search():
     assert "Get Lucky" in results_deezer[0].title or "Daft Punk" in results_deezer[0].artist
 
 
-def test_lrclib_synced_lyrics():
+def test_lrclib_synced_lyrics(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "syncedLyrics": "[00:01.00] Like the legend of the phoenix\n[00:05.00] All ends with beginnings"
+            }
+
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: FakeResponse())
+
     lrclib = LRCLIBProvider()
     lyrics = lrclib.get_synced_lyrics("Get Lucky", "Daft Punk", duration=248)
     assert lyrics is not None

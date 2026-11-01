@@ -1,6 +1,5 @@
 import subprocess
 from pathlib import Path
-import pytest
 from mutagen.oggopus import OggOpus
 from typer.testing import CliRunner
 

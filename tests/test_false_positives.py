@@ -1,5 +1,4 @@
 from apolo.metadata.matcher import MetadataMatcher
-from apolo.metadata.models import TrackMetadata
 
 
 def test_reject_false_positive_matches():

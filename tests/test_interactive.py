@@ -1,7 +1,5 @@
 from pathlib import Path
 from typing import List, Tuple
-from unittest.mock import MagicMock
-import pytest
 
 from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.metadata.matcher import MetadataMatcher

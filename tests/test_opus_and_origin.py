@@ -2,14 +2,11 @@ import io
 import subprocess
 from pathlib import Path
 from PIL import Image
-import pytest
 from mutagen.oggopus import OggOpus
 from mutagen.flac import FLAC, Picture as FLACPicture
 
 from apolo.config import ApoloConfig, DirectoriesConfig, DownloaderConfig
-from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import ProcessingPipeline, is_well_tagged
-from apolo.tagger import AudioTagger
 
 
 def create_dummy_flac(output_path: Path, add_cover: bool = True):

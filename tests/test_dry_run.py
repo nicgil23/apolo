@@ -1,12 +1,9 @@
-import io
 import subprocess
 from pathlib import Path
-from PIL import Image
-import pytest
 from typer.testing import CliRunner
 
 from apolo.cli import app
-from apolo.config import ApoloConfig, DirectoriesConfig, DownloaderConfig
+from apolo.config import ApoloConfig, DirectoriesConfig
 from apolo.pipeline import ProcessingPipeline
 from apolo.tagger import AudioTagger
 from apolo.metadata.models import TrackMetadata

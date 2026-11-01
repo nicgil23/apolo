@@ -1,7 +1,6 @@
 import subprocess
 from pathlib import Path
 from rich.console import Console
-import pytest
 
 from apolo.inspector import inspect_track
 

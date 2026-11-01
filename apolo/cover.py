@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 from PIL import Image
 
 from apolo.pipeline import AUDIO_EXTENSIONS

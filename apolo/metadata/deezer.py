@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 import requests
 
 from apolo.metadata.models import TrackMetadata

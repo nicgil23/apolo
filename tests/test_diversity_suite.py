@@ -3,15 +3,13 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 from PIL import Image
-import pytest
 
 from apolo.config import ApoloConfig, DirectoriesConfig, OrganizationConfig
 from apolo.doctor import LibraryDoctor
-from apolo.metadata.matcher import MetadataMatcher
 from apolo.metadata.models import TrackMetadata
 from apolo.organizer import LibraryOrganizer
 from apolo.tagger import AudioTagger
-from apolo.utils import is_compilation_album, is_single_release, normalize_search_string
+from apolo.utils import is_compilation_album
 
 
 def create_dummy_audio(

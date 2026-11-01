@@ -1,5 +1,4 @@
 import re
-import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 import typer
@@ -7,8 +6,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from apolo.config import get_config_path, load_config
-from apolo.metadata.models import METADATOS_BIBLIOTECA, TrackMetadata
+from apolo.config import get_config_path, load_config, save_doctor_controlled_anomalies
+from apolo.metadata.models import TrackMetadata
 from apolo.pipeline import AUDIO_EXTENSIONS, ProcessingPipeline
 from apolo.tagger import AudioTagger
 
@@ -389,6 +388,7 @@ def set_cmd(
     genre: Optional[str] = typer.Option(None, "--genre", "-g", help="Music genre"),
     origin: Optional[str] = typer.Option(None, "--origin", "-o", help="Origin / source identifier"),
     compilation: Optional[bool] = typer.Option(None, "--compilation", "-c", help="Mark as compilation (true/false)"),
+    controlled_anomaly: Optional[bool] = typer.Option(None, "--control / --no-control", "--controlled-anomaly / --no-controlled-anomaly", help="Mark or unmark track as controlled intentional partial album"),
     lyrics: Optional[str] = typer.Option(None, "--lyrics", "-l", help="Lyrics text or path to .lrc / .txt file"),
     cover: Optional[Path] = typer.Option(None, "--cover", help="Path to cover art image file to embed"),
     reorganize: bool = typer.Option(False, "--reorganize", "-r", help="Automatically relocate files according to updated metadata"),
@@ -439,6 +439,9 @@ def set_cmd(
         updates["origin"] = origin
     if compilation is not None:
         updates["compilation"] = compilation
+    if controlled_anomaly is not None:
+        updates["controlled_anomaly"] = controlled_anomaly
+        updates["partial_album"] = controlled_anomaly
     if lyrics_content is not None:
         updates["lyrics"] = lyrics_content
 
@@ -487,7 +490,7 @@ def set_cmd(
             AudioTagger.update_tags(file_path, updates, cover_data=cover_bytes)
 
     if reorganize:
-        console.print(f"\n[bold magenta]Reorganizing updated tracks...[/bold magenta]")
+        console.print("\n[bold magenta]Reorganizing updated tracks...[/bold magenta]")
         moved = pipeline.reorganize_paths(target_files, dry_run=dry_run)
         if moved:
             title_text = f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]" if dry_run else f"Reorganized Tracks ({len(moved)} moved)"
@@ -635,7 +638,7 @@ def edit_cmd(
         return
 
     if reorganize:
-        console.print(f"\n[bold magenta]Reorganizing updated tracks...[/bold magenta]")
+        console.print("\n[bold magenta]Reorganizing updated tracks...[/bold magenta]")
         moved = pipeline.reorganize_paths(target_files, dry_run=dry_run)
         if moved:
             title_text = f"[bold yellow]Reorganized Tracks (DRY-RUN: {len(moved)} would move)[/bold yellow]" if dry_run else f"Reorganized Tracks ({len(moved)} moved)"
@@ -681,6 +684,11 @@ def config_cmd():
   - iTunes:             {config.providers.prefer_itunes}
   - MusicBrainz:        {config.providers.prefer_musicbrainz}
   - Synced Only:        {config.providers.synced_lyrics_only}
+
+[bold cyan]Library Doctor:[/bold cyan]
+  - Show Detailed Anomalies: {config.doctor.show_controlled_anomalies}
+  - Show Missing Lyrics:     {config.doctor.show_missing_lyrics}
+  - Controlled Anomaly Rules: {len(config.doctor.controlled_anomalies)}
 """
     console.print(Panel(panel_content, title="Apolo Configuration", border_style="bold blue"))
 
@@ -719,18 +727,57 @@ def doctor_cmd(
     ),
     duplicates_only: bool = typer.Option(False, "--duplicates", help="Display duplicate tracks only"),
     missing_tracks_only: bool = typer.Option(False, "--missing-tracks", help="Display incomplete albums only"),
+    controlled_only: bool = typer.Option(False, "--controlled", "--controlled-anomalies", help="Display controlled / intentional partial albums only"),
     missing_lyrics_only: bool = typer.Option(False, "--missing-lyrics", help="Display tracks missing synced lyrics only"),
     missing_covers_only: bool = typer.Option(False, "--missing-covers", help="Display tracks missing high-res covers only"),
+    show_controlled: Optional[bool] = typer.Option(
+        None,
+        "--show-controlled/--no-show-controlled",
+        "--show-anomalies/--no-show-anomalies",
+        help="Show or hide detailed controlled anomalies table in general report (overrides doctor.show_controlled_anomalies)",
+    ),
+    show_missing_lyrics: Optional[bool] = typer.Option(
+        None,
+        "--show-lyrics/--no-show-lyrics",
+        "--show-missing-lyrics/--no-show-missing-lyrics",
+        help="Show or hide detailed missing synced lyrics table in general report (overrides doctor.show_missing_lyrics)",
+    ),
+    control_album: Optional[str] = typer.Option(None, "--control", help="Mark an album pattern as a controlled intentional partial album in config.toml (e.g. 'C.R.O - Malos Cantores')"),
+    uncontrol_album: Optional[str] = typer.Option(None, "--uncontrol", help="Remove an album pattern from controlled anomalies in config.toml"),
     repair_lyrics: bool = typer.Option(False, "--repair-lyrics", help="Automatically fetch and embed missing synced lyrics from LRCLIB"),
     repair_covers: bool = typer.Option(False, "--repair-covers", help="Automatically fetch and embed missing high-res covers"),
     repair_fragmented: bool = typer.Option(False, "--repair-fragmented", help="Automatically unify fragmented collaborative artist folders"),
     repair_all: bool = typer.Option(False, "--repair", "--repair-all", help="Run all repairs (lyrics, covers, fragmented folders)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview repairs without modifying files on disk"),
 ):
-    """[bold green]Library Health & Diagnostics[/bold green]: Audit duplicates, incomplete albums, missing lyrics, low-res covers, and fragmented artist folders with automated batch repairs."""
+    """[bold green]Library Health & Diagnostics[/bold green]: Audit duplicates, incomplete albums, controlled partial albums, missing lyrics, and low-res covers with automated batch repairs."""
     from apolo.doctor import LibraryDoctor
 
     config = load_config()
+
+    # Handle --control / --uncontrol
+    if control_album:
+        current_list = list(config.doctor.controlled_anomalies)
+        clean_pat = control_album.strip()
+        if clean_pat and clean_pat not in current_list:
+            current_list.append(clean_pat)
+            save_doctor_controlled_anomalies(current_list)
+            console.print(f"[bold green]Added controlled anomaly rule:[/bold green] '{clean_pat}' -> saved in config.toml")
+        else:
+            console.print(f"[yellow]Rule already exists or is empty:[/yellow] '{clean_pat}'")
+        return
+
+    if uncontrol_album:
+        current_list = list(config.doctor.controlled_anomalies)
+        clean_pat = uncontrol_album.strip()
+        if clean_pat in current_list:
+            current_list.remove(clean_pat)
+            save_doctor_controlled_anomalies(current_list)
+            console.print(f"[bold green]Removed controlled anomaly rule:[/bold green] '{clean_pat}' -> updated config.toml")
+        else:
+            console.print(f"[yellow]Rule not found in controlled anomalies:[/yellow] '{clean_pat}'")
+        return
+
     doctor = LibraryDoctor(config)
     target_dir = library_dir or config.directories.library_dir
 
@@ -791,7 +838,7 @@ def doctor_cmd(
         return
 
     # Filter views if specific flags requested
-    show_all = not any([duplicates_only, missing_tracks_only, missing_lyrics_only, missing_covers_only])
+    show_all = not any([duplicates_only, missing_tracks_only, controlled_only, missing_lyrics_only, missing_covers_only])
 
     # 1. Global Health Overview
     if show_all:
@@ -807,6 +854,7 @@ def doctor_cmd(
 [bold yellow]Issues Found:[/bold yellow]
   • Duplicate Groups:        {len(report.duplicates)}
   • Incomplete Albums:       {len(report.incomplete_albums)}
+  • Controlled Anomalies:    {len(report.controlled_incomplete_albums)} (intentional partial albums)
   • Fragmented Artist Dirs:  {len(report.fragmented_artist_folders)}
   • Missing Synced Lyrics:   {len(report.missing_lyrics)}
   • Missing/Low-Res Covers:  {len(report.missing_or_lowres_covers)}
@@ -846,8 +894,39 @@ def doctor_cmd(
             alb_table.add_row(f"{alb.album_artist} - {alb.album_title}", str(alb.track_total), pres_str, miss_str)
         console.print(alb_table)
 
+    # 4b. Controlled Anomalies Table
+    should_show_controlled = False
+    if controlled_only:
+        should_show_controlled = True
+    elif show_all:
+        if show_controlled is not None:
+            should_show_controlled = show_controlled
+        else:
+            should_show_controlled = config.doctor.show_controlled_anomalies
+
+    if should_show_controlled and report.controlled_incomplete_albums:
+        ctrl_table = Table(title=f"Controlled Anomalies / Álbumes Parciales Controlados ({len(report.controlled_incomplete_albums)} albums)", show_header=True, header_style="bold blue")
+        ctrl_table.add_column("Album Artist & Title", style="bold cyan")
+        ctrl_table.add_column("Total", style="dim")
+        ctrl_table.add_column("Present Tracks", style="green")
+        ctrl_table.add_column("Unincluded Tracks", style="dim cyan")
+        for alb in report.controlled_incomplete_albums:
+            pres_str = ", ".join(str(n) for n in alb.present_tracks)
+            miss_str = ", ".join(str(n) for n in alb.missing_tracks)
+            ctrl_table.add_row(f"{alb.album_artist} - {alb.album_title}", str(alb.track_total), pres_str, miss_str)
+        console.print(ctrl_table)
+
     # 5. Missing Lyrics
-    if (show_all or missing_lyrics_only) and report.missing_lyrics:
+    should_show_lyrics = False
+    if missing_lyrics_only:
+        should_show_lyrics = True
+    elif show_all:
+        if show_missing_lyrics is not None:
+            should_show_lyrics = show_missing_lyrics
+        else:
+            should_show_lyrics = config.doctor.show_missing_lyrics
+
+    if should_show_lyrics and report.missing_lyrics:
         lyr_table = Table(title=f"Tracks Missing Synced Lyrics ({len(report.missing_lyrics)} tracks)", show_header=True, header_style="bold cyan")
         lyr_table.add_column("File Path", style="cyan")
         for p in report.missing_lyrics[:15]:
@@ -946,7 +1025,7 @@ def playlist_repair_cmd():
 
     config = load_config()
     pm = PlaylistManager(config)
-    console.print(f"\n[bold magenta]Scanning playlists for broken file paths...[/bold magenta]")
+    console.print("\n[bold magenta]Scanning playlists for broken file paths...[/bold magenta]")
 
     repaired = pm.repair_playlists()
     if not repaired:
@@ -1128,6 +1207,8 @@ def cover_set_cmd(
     ),
 ):
     """[bold green]Set Album Cover[/bold green]: Embed an optimized 1:1 square cover art image into all audio tracks in a directory."""
+    from apolo.cover import CoverManager
+
     try:
         updated = CoverManager.set_album_cover(paths, image)
         console.print(f"[bold green]Successfully embedded cover art into {updated} tracks.[/bold green]")

@@ -1,8 +1,5 @@
-import io
 import subprocess
 from pathlib import Path
-from PIL import Image
-import pytest
 from typer.testing import CliRunner
 
 from apolo.cli import app

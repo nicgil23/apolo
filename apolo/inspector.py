@@ -1,11 +1,8 @@
 import base64
-import io
-import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 import mutagen
 from mutagen.flac import Picture
-from PIL import Image
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -224,7 +221,7 @@ def inspect_track(file_path: Path, console: Optional[Console] = None) -> None:
     # Show preview of lyrics if present
     preview_lyrics = lyrics_raw or (sidecar_lrc.read_text(encoding="utf-8", errors="ignore") if has_sidecar_lrc else None)
     if preview_lyrics:
-        lines = [l.strip() for l in preview_lyrics.splitlines() if l.strip()][:8]
+        lines = [line.strip() for line in preview_lyrics.splitlines() if line.strip()][:8]
         preview_text = "\n".join(lines)
         if len(preview_lyrics.splitlines()) > 8:
             preview_text += "\n..."

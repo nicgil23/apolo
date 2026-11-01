@@ -2,7 +2,6 @@ import io
 import subprocess
 from pathlib import Path
 from PIL import Image
-import pytest
 from mutagen.oggopus import OggOpus
 from typer.testing import CliRunner
 
