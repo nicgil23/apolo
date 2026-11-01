@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 
 from apolo.config import ApoloConfig, load_config
+from apolo.library.template import DEFAULT_PATH_TEMPLATE, PathTemplateEngine
 from apolo.metadata.heuristics import is_compilation_album, is_single_release
 from apolo.metadata.models import TrackMetadata
 from apolo.metadata.parsing import extract_disc_info
@@ -13,6 +14,7 @@ class LibraryOrganizer:
     def __init__(self, config: ApoloConfig | None = None):
         self.config = config or load_config()
         self.library_dir = self.config.directories.library_dir
+        self.template_engine = PathTemplateEngine()
 
     def _resolve_case_insensitive_dir(self, parent_dir: Path, target_name: str) -> Path:
         """Finds existing directory on disk matching target_name (case, accent, and symbol insensitive), or returns new path."""
@@ -128,6 +130,84 @@ class LibraryOrganizer:
         return parent_dir / album_folder
 
     def get_destination_path(self, metadata: TrackMetadata, extension: str = ".opus") -> Path:
+        template = (self.config.organization.path_template or DEFAULT_PATH_TEMPLATE).strip()
+        if template == DEFAULT_PATH_TEMPLATE:
+            return self._get_default_destination_path(metadata, extension=extension)
+        return self._get_custom_destination_path(metadata, template=template, extension=extension)
+
+    def _get_custom_destination_path(
+        self, metadata: TrackMetadata, template: str, extension: str = ".opus"
+    ) -> Path:
+        if not extension.startswith("."):
+            extension = f".{extension}"
+
+        raw_album = metadata.album or "Single"
+        cleaned_album_name, disc_from_album = extract_disc_info(raw_album)
+        disc_num = metadata.disc_number or disc_from_album or 1
+        disc_total = metadata.disc_total
+
+        effective_album_artist = metadata.album_artist or metadata.get_album_artist_or_artist()
+        is_compilation = bool(metadata.compilation) or is_compilation_album(
+            raw_album, effective_album_artist
+        )
+
+        # 1. Compilation handling
+        target_metadata = metadata
+        if is_compilation and self.config.organization.various_artists_folder:
+            import copy
+
+            target_metadata = copy.copy(metadata)
+            target_metadata.album_artist = "Various Artists"
+
+        # 2. Render parts from template engine
+        rendered_parts = self.template_engine.render_parts(
+            template, target_metadata, extension=extension
+        )
+
+        # 3. Standalone single release handling
+        if self.config.organization.group_singles and is_single_release(
+            raw_album, metadata.track_total
+        ):
+            if len(rendered_parts) > 1:
+                rendered_parts[-2] = "Singles"
+
+                track_num = metadata.track_number if metadata.track_number is not None else 1
+                date_str = metadata.get_year()
+                title_clean = sanitize_filename(metadata.title)
+                if metadata.track_total and metadata.track_total > 1 and track_num is not None:
+                    if date_str and date_str != "Unknown Year":
+                        file_name = f"{track_num:02d} - {title_clean} ({date_str}){extension}"
+                    else:
+                        file_name = f"{track_num:02d} - {title_clean}{extension}"
+                else:
+                    if date_str and date_str != "Unknown Year":
+                        file_name = f"{title_clean} ({date_str}){extension}"
+                    else:
+                        file_name = f"{title_clean}{extension}"
+                rendered_parts[-1] = file_name
+
+        # 4. Multi-disc handling
+        is_multi_disc = (
+            (disc_total is not None and disc_total > 1)
+            or disc_num > 1
+            or disc_from_album is not None
+        )
+        if is_multi_disc and "{disc" not in template.lower():
+            if self.config.organization.multi_disc_folder and len(rendered_parts) > 1:
+                rendered_parts.insert(-1, f"Disc {disc_num:02d}")
+            else:
+                rendered_parts[-1] = f"{disc_num}-{rendered_parts[-1]}"
+
+        # 5. Resolve directory path with case/accent/symbol tolerance
+        current_dir = self.library_dir
+        for dir_segment in rendered_parts[:-1]:
+            current_dir = self._resolve_case_insensitive_dir(current_dir, dir_segment)
+
+        return current_dir / rendered_parts[-1]
+
+    def _get_default_destination_path(
+        self, metadata: TrackMetadata, extension: str = ".opus"
+    ) -> Path:
         if not extension.startswith("."):
             extension = f".{extension}"
         artist_clean = sanitize_filename(metadata.get_album_artist_or_artist())
