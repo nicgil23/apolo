@@ -21,13 +21,26 @@ class TaskInfo:
     id: str
     url: str
     origin: str
-    status: str  # queued, downloading, completed, failed, cancelled
+    status: str  # queued, downloading, retrying, completed, failed, cancelled
     created_at: float
     updated_at: float
+    title: Optional[str] = None
+    is_playlist: bool = False
+    total_tracks: int = 0
+    completed_tracks: int = 0
+    failed_tracks: int = 0
+    current_track_index: Optional[int] = None
+    current_track_title: Optional[str] = None
+    current_track_artist: Optional[str] = None
+    current_track_progress: float = 0.0
+    current_track_progress_text: str = ""
     progress: float = 0.0
     progress_text: str = ""
+    subtracks: List[Dict[str, Any]] = field(default_factory=list)
     results: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
+    retry_count: int = 0
+    next_retry_at: Optional[float] = None
     is_cancelled: bool = False
 
 
@@ -49,16 +62,19 @@ class ApoloTaskManager:
         except Exception:
             pass
 
-    def enqueue_download(self, url: str, origin: Optional[str] = None) -> TaskInfo:
+    def enqueue_download(self, url: str, origin: Optional[str] = None, title: Optional[str] = None) -> TaskInfo:
         cleaned = clean_media_url(url.strip())
         task_id = str(uuid.uuid4())[:8]
         inferred_origin = origin or ("youtube" if "youtu" in cleaned.lower() else "download")
         now = time.time()
+        is_playlist = "list=" in cleaned or "/playlist" in cleaned or "/browse" in cleaned
         task = TaskInfo(
             id=task_id,
             url=cleaned,
             origin=inferred_origin,
             status="queued",
+            title=title,
+            is_playlist=is_playlist,
             created_at=now,
             updated_at=now,
         )
@@ -78,6 +94,16 @@ class ApoloTaskManager:
         task.updated_at = time.time()
         return True
 
+    def clear_history(self) -> int:
+        """Removes all tasks from memory and cancels active downloads."""
+        count = len(self.tasks)
+        for task in self.tasks.values():
+            if task.status in ("queued", "downloading", "retrying"):
+                task.is_cancelled = True
+                task.status = "cancelled"
+        self.tasks.clear()
+        return count
+
     def _run_download_task(self, task: TaskInfo) -> None:
         if task.is_cancelled:
             return
@@ -85,21 +111,91 @@ class ApoloTaskManager:
         task.status = "downloading"
         task.updated_at = time.time()
 
-        def progress_cb(pct: float, text: str):
+        def cancel_chk() -> bool:
+            return task.is_cancelled
+
+        def on_playlist_init(title: str, total_tracks: int, subtracks_data: List[Dict[str, Any]]) -> None:
+            if not task.is_cancelled:
+                task.is_playlist = True
+                task.title = title or task.title or "Playlist"
+                task.total_tracks = total_tracks
+                task.subtracks = subtracks_data
+                task.updated_at = time.time()
+
+        def on_subtrack_status(
+            sub_id: str,
+            status: str,
+            error: Optional[str] = None,
+            retry_count: int = 0,
+            next_retry_at: Optional[float] = None,
+        ) -> None:
+            if not task.is_cancelled:
+                for st in task.subtracks:
+                    if st.get("id") == sub_id:
+                        st["status"] = status
+                        if error is not None:
+                            st["error"] = error
+                        if retry_count:
+                            st["retry_count"] = retry_count
+                        st["next_retry_at"] = next_retry_at
+                        if status == "completed":
+                            st["progress"] = 100.0
+                            st["progress_text"] = "Listo"
+                        elif status == "retrying":
+                            st["progress_text"] = "Reintentando en 10s..."
+                        elif status == "failed":
+                            st["progress_text"] = "Error"
+                        break
+                task.completed_tracks = sum(1 for st in task.subtracks if st.get("status") == "completed")
+                task.failed_tracks = sum(1 for st in task.subtracks if st.get("status") == "failed")
+                task.updated_at = time.time()
+
+        def on_subtrack_progress(sub_id: str, pct: float, text: str) -> None:
+            if not task.is_cancelled:
+                for st in task.subtracks:
+                    if st.get("id") == sub_id:
+                        st["progress"] = pct
+                        st["progress_text"] = text
+                        st["status"] = "downloading"
+                        break
+                task.updated_at = time.time()
+
+        def on_active_track(idx: int, total: int, title: str, artist: Optional[str], pct: float, text: str) -> None:
+            if not task.is_cancelled:
+                task.current_track_index = idx
+                task.current_track_title = title
+                task.current_track_artist = artist
+                task.current_track_progress = pct
+                task.current_track_progress_text = text
+                task.updated_at = time.time()
+
+        def on_track_title(title: str) -> None:
+            if not task.is_cancelled:
+                task.title = title
+                task.updated_at = time.time()
+
+        def progress_cb(pct: float, text: str) -> None:
             if not task.is_cancelled:
                 task.progress = pct
                 task.progress_text = text
+                if "reintentando" in text.lower():
+                    task.status = "retrying"
+                elif task.status == "retrying" and "reintentando" not in text.lower():
+                    task.status = "downloading"
                 task.updated_at = time.time()
-
-        def cancel_chk() -> bool:
-            return task.is_cancelled
 
         try:
             processed = self.pipeline.process_url(
                 task.url,
                 origin=task.origin,
+                suggested_title=task.title,
                 progress_callback=progress_cb,
                 cancel_check=cancel_chk,
+                on_playlist_init=on_playlist_init,
+                on_subtrack_status=on_subtrack_status,
+                on_subtrack_progress=on_subtrack_progress,
+                on_active_track=on_active_track,
+                on_track_title=on_track_title,
             )
 
             if task.is_cancelled:
@@ -152,7 +248,7 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
 
     def _send_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Max-Age", "86400")
 
@@ -175,7 +271,7 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
 
         if path in ("", "/health", "/api/status"):
-            active_count = sum(1 for t in self.task_manager.tasks.values() if t.status in ("queued", "downloading"))
+            active_count = sum(1 for t in self.task_manager.tasks.values() if t.status in ("queued", "downloading", "retrying"))
             self._send_json({
                 "status": "ok",
                 "service": "apolo",
@@ -201,9 +297,25 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
 
         self._send_json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if path in ("/api/tasks", "/api/tasks/clear"):
+            cleared = self.task_manager.clear_history()
+            self._send_json({"status": "ok", "cleared_count": cleared})
+            return
+
+        self._send_json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
+
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+
+        if path in ("/api/tasks/clear", "/api/tasks/clean"):
+            cleared = self.task_manager.clear_history()
+            self._send_json({"status": "ok", "cleared_count": cleared})
+            return
 
         if path.startswith("/api/tasks/") and path.endswith("/cancel"):
             task_id = path.replace("/api/tasks/", "").replace("/cancel", "").strip()
@@ -233,7 +345,8 @@ class ApoloRequestHandler(BaseHTTPRequestHandler):
                 return
 
             origin = payload.get("origin")
-            task = self.task_manager.enqueue_download(url=url.strip(), origin=origin)
+            title = payload.get("title") or payload.get("suggested_title")
+            task = self.task_manager.enqueue_download(url=url.strip(), origin=origin, title=title)
             self._send_json(
                 {
                     "message": "Download task enqueued successfully",
